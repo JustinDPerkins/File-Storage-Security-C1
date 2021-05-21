@@ -8,7 +8,7 @@ Automated process to deploy FSS Storage stack on each new S3 bucket using Lambda
     - **Create New Stack**
       - Prerequisites: *template is ready*
       - Specify Template: *upload from file*
-      - Select: **[strage_stack.yaml]()**
+      - Select: **[storage_stack.yaml](https://github.com/JustinDPerkins/FSS-Storage-Automation-Lambda/blob/main/cloudformation/storage_stack.yaml)**
       - **Next**
       - StackName: *enter name for stack*
       - FSSAPI: `Cloud One FSS API Key`
