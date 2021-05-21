@@ -53,6 +53,9 @@ Resources:
               - "iam:DeleteRole"
               - "sqs:GetQueueAttributes"
               - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+              - "s3:PutBucketTagging"
               - "cloudformation:DescribeStacks"
               - "s3:PutObject"
               - "s3:GetObject"
@@ -92,7 +95,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       Runtime: python3.8
-      Timeout: 8
+      Timeout: 500
       Handler: index.lambda_handler
       Role: !GetAtt 
         - lambdarole
@@ -115,7 +118,6 @@ Resources:
           stack_id = os.environ['STACK_ID']
           get_url = "https://cloudone.trendmicro.com/api/filestorage/external-id"
           post_url = "https://cloudone.trendmicro.com/api/filestorage/stacks"
-
           def lambda_handler(event, context):
               #gather bucket name from event
               bucket_name = event['detail']['requestParameters']['bucketName']
@@ -166,7 +168,6 @@ Resources:
                                   add_storage(bucket_name, ext_id, account_id, kms_arn)
                                   break
                       addTag(s3_client, bucket_name)
-
           def addTag(s3_client, bucket_name):
               logger.info("Bucket: " + bucket_name + " has no tags; adding")
               response = s3_client.put_bucket_tagging(Bucket=bucket_name,
@@ -179,8 +180,6 @@ Resources:
                               ]
                           },
                       )
-
-
           def add_storage(bucket_name, ext_id, account_id, kms_arn):
               #deploy storage stack
               ExternalID = {'ParameterKey':'ExternalID', 'ParameterValue':ext_id }
