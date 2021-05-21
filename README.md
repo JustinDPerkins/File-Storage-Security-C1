@@ -15,43 +15,55 @@ Automated process to deploy FSS Storage stack on each new S3 bucket using Lambda
       - SQSURL: `http://scanner-stack-sqs-queue-url.com`
       - StackID: `Scanner Stack ID`
       - **Create Stack**
+         - The Stack ID and SQSURL can be obtained with list stacks api call
+         - See [FSS API Documentation](https://cloudone.trendmicro.com/docs/file-storage-security/api-create-stack/) for details.
+      
+# Deploy via AWS Console
+<details>
+<summary>Create IAM Role/Policy for lambda execution</summary>
 
-# Create IAM Role/Policy for lambda execution
    * In AWS Console > Services > IAM
-    - In left panel under **Access Management** click **Policy**
-    - Click **Create Policy**
-        - Select **JSON**
-        - paste **[fss_policy](https://github.com/JustinDPerkins/FSS-Storage-Automation-Lambda/blob/main/policy/fss_policy.json)**
-        - **Save**
-  * In AWS Console > Services > IAM
-    - In left panel under **Access Management** click **Roles**
-    - Create Role
-        - Entity: **AWS Service**
-        - Service: **Lambda**
-        - select policy made previously
-        - **Save**
+      - In left panel under **Access Management** click **Policy**
+      - Click **Create Policy**
+         - Select **JSON**
+         - paste **[fss_policy](https://github.com/JustinDPerkins/FSS-Storage-Automation-Lambda/blob/main/policy/fss_policy.json)**
+         - Save
+   * In AWS Console > Services > IAM
+      - In left panel under **Access Management** click **Roles**
+      - Create Role
+         - Entity: AWS Service
+         - Service: Lambda
+         - select policy made previously
+         - Save
+</details>
 
-# Create Lambda Function
+<details>
+<summary>Create Lambda Function</summary>
+
    * In AWS Console > Services > Lambda >  Create Function
+
       - Select **Author from scratch**
       - Function Name: *example-name*
       - Runtime: **Python 3.8**
       - Select Service role: **Select role created in previous steps**
       - Create Function
    * Under Code
-      - Copy and Paste: **[storage_stack_fx.py](https://github.com/JustinDPerkins/FSS-Storage-Automation-Lambda/blob/main/lambda/storage_stack_fx.py)**
+      - Copy and Paste: **[storage_stack.yaml](https://github.com/JustinDPerkins/FSS-Storage-Automation-Lambda/blob/main/cloudformation/storage_stack.yaml)**
       - Deploy
    * Under Configuration
       - Environment Variables
-        - **C1-API** : *your fss api key*
-        - **SQS_Name** : *scanner sqs url*
-        - **STACK_ID** : *scanner stack id*
+      - **C1-API** : *your fss api key*
+      - **SQS_Name** : *scanner sqs url*
+      - **STACK_ID** : *scanner stack id*
       - See [FSS API Documentation](https://cloudone.trendmicro.com/docs/file-storage-security/api-create-stack/) for details.
       - Configuration
-        - General configuration > Edit
-        - increase timeout to 8m
+      - General configuration > Edit
+      - increase timeout to 8m
+</details>
 
-# Create CloudWatch Rule
+<details>
+<summary>Create CloudWatch Rule</summary>
+
    * In AWS Console > Services > CloudWatch
       - In left panel under **Events** click **Rules**
    * Create New CloudWatch Rule
@@ -68,4 +80,4 @@ Automated process to deploy FSS Storage stack on each new S3 bucket using Lambda
       - Description: 
       - State: **Enabled**
       - Create rule 
- 
+</details>
