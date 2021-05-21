@@ -3,6 +3,19 @@
 Automated process to deploy FSS Storage stack on each new S3 bucket using Lambda. The storage stack will be linked to the scanner stack previously defined.
 
 ![](architecture.png)
+# Deploy via CloudFormation
+   * In AWS Console > Services > CloudFormation
+    - **Create New Stack**
+      - Prerequisites: *template is ready*
+      - Specify Template: *upload from file*
+      - Select: **[strage_stack.yaml]()**
+      - **Next**
+      - StackName: *enter name for stack*
+      - FSSAPI: `Cloud One FSS API Key`
+      - SQSURL: `http://scanner-stack-sqs-queue-url.com`
+      - StackID: `Scanner Stack ID`
+      - **Create Stack**
+
 # Create IAM Role/Policy for lambda execution
    * In AWS Console > Services > IAM
     - In left panel under **Access Management** click **Policy**
