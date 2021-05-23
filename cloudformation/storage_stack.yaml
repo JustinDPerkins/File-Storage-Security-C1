@@ -16,11 +16,11 @@ Resources:
             - lambda.amazonaws.com
           Action:
           - sts:AssumeRole
-      RoleName: lambda-fss-role
+      RoleName: !Ref AWS::StackName
   lambdarolepolicy:
     Type: 'AWS::IAM::Policy'
     Properties:
-      PolicyName: lambda-fss-role-policy
+      PolicyName: !Ref lambdarole
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
