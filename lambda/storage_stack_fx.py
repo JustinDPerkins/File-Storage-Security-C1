@@ -24,7 +24,7 @@ def lambda_handler(event, context):
     substring = "copyzipsdestbucket"
     logger.info("S3 Bucket: " + bucket_name)
     if substring in bucket_name:
-        print("Name matched filter:" + bucket_name)
+        logger.info("Name matched filter:" + bucket_name)
         return 0
     else:
         # gather cloud one ext id
@@ -125,7 +125,7 @@ def add_storage(bucket_name, ext_id, account_id, kms_arn):
     res = cft_client.describe_stacks(StackName="C1-FSS-Storage-" + bucket_name)
     storage_stack = res["Stacks"][0]["Outputs"][2]["OutputValue"]
     logger.info("FSS StorageRole Arn: " + storage_stack)
-    print(storage_stack)
+    logger.info(storage_stack)
     # add to c1
     payload = {
         "type": "storage",
@@ -145,5 +145,5 @@ def add_storage(bucket_name, ext_id, account_id, kms_arn):
         body=encoded_msg,
     )
     transform = json.loads(resp.data.decode("utf-8"))
-    print(transform)
+    logger.info(transform)
     logger.info("Storage Stack has deployed")
