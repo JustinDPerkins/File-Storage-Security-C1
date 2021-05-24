@@ -77,7 +77,6 @@ def lambda_handler(event, context):
                         )
                         return 0
                     elif tags["Value"].lower() != "yes":
-                        add_tag(s3_client, bucket_name, tag_list=tag_status)
                         add_storage(bucket_name, ext_id, account_id, kms_arn)
                         break
             add_tag(s3_client, bucket_name, tag_list=tag_status)
