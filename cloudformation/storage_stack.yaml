@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: "Automatically deploy File Storage Security - Storage stack to every new S3 bucket created and register it to the defined Scanner Stack.  "
+Description: "Automatically deploy File Storage Security - Storage stack to every new S3 bucket created and register it to the defined Scanner Stack."
 Metadata:
   License: MIT-License
   Version: 1.2
