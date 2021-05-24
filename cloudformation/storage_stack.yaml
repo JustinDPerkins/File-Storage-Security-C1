@@ -8,17 +8,17 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
-        - Effect: Allow
-          Principal:
-            Service:
-            - lambda.amazonaws.com
-          Action:
-          - sts:AssumeRole
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
       RoleName: !Ref AWS::StackName
   lambdarolepolicy:
-    Type: 'AWS::IAM::Policy'
+    Type: "AWS::IAM::Policy"
     Properties:
       PolicyName: !Ref lambdarole
       PolicyDocument:
@@ -97,7 +97,7 @@ Resources:
       Runtime: python3.8
       Timeout: 500
       Handler: index.lambda_handler
-      Role: !GetAtt 
+      Role: !GetAtt
         - lambdarole
         - Arn
       Code:
@@ -219,14 +219,14 @@ Resources:
       MemorySize: 128
       Environment:
         Variables:
-          C1_API: !Ref FSSAPI
+          C1_API: !Ref C1API
           SQS_Name: !Ref SQSURL
           STACK_ID: !Ref StackID
   cloudwatchevent:
     Type: AWS::Events::Rule
     Properties:
       State: "ENABLED"
-      EventPattern: 
+      EventPattern:
         source:
           - aws.s3
         detail:
@@ -249,15 +249,15 @@ Resources:
         - cloudwatchevent
         - Arn
 Parameters:
-  FSSAPI:
+  C1API:
     Type: String
-    Default: ''
+    Default: ""
     Description: Enter your Cloud One File Storage API Key
   SQSURL:
     Type: String
-    Default: ''
+    Default: ""
     Description: Enter the Scanner stack SQS URL
   StackID:
     Type: String
-    Default: ''
+    Default: ""
     Description: Enter the Scanner stack ID
