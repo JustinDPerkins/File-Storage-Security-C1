@@ -6,7 +6,7 @@ Automated process to deploy FSS Storage stack on each new S3 bucket using Lambda
 # Deploy via CloudFormation
    * If not already present, [deploy a Scanner Stack](https://cloudone.trendmicro.com/docs/file-storage-security/stack-add/#AddScanner) in your Cloud One Account
    * Obtain the stack's Cloud One ID and SQSURL
-      - The Stack ID and SQSURL can be obtained with list stacks api call
+      - The Stack ID and SQSURL can be obtained with [list stacks api call](https://cloudone.trendmicro.com/docs/file-storage-security/api-reference/tag/Stack#operation/listStacks)
       - See [FSS API Documentation](https://cloudone.trendmicro.com/docs/file-storage-security/api-create-stack/) for details.
    * In AWS Console > Services > CloudFormation
     - **Create New Stack**
@@ -86,7 +86,7 @@ Automated process to deploy FSS Storage stack on each new S3 bucket using Lambda
 
 # A Note on Tags
 
-The Lambda will choose whether or not to deploy a storage stack depending on a bucket's tags. See below for details:
+The Lambda will choose whether or not to deploy a storage stack depending on a bucket's tags. **See below for details**:
 
 | Tag            | Value  | Behavior                       |
 | -------------- | ------ | ------------------------------ |
