@@ -121,7 +121,6 @@ def add_storage(bucket_name, ext_id, account_id, kms_arn):
         ],
         Capabilities=["CAPABILITY_IAM"],
     )
-    logging.debug(response)
     cft_waiter = cft_client.get_waiter("stack_create_complete")
     cft_waiter.wait(StackName="C1-FSS-Storage-" + bucket_name)
     res = cft_client.describe_stacks(StackName="C1-FSS-Storage-" + bucket_name)
