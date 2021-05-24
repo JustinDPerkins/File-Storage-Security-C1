@@ -22,7 +22,7 @@ def lambda_handler(event, context):
     bucket_name = event["detail"]["requestParameters"]["bucketName"]
     # filter event to bucket name
     substring = "copyzipsdestbucket"
-    logger.info("s3 Bucket: " + bucket_name)
+    logger.info("S3 Bucket: " + bucket_name)
     if substring in bucket_name:
         print("Name matched filter:" + bucket_name)
         return 0
