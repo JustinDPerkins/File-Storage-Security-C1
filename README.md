@@ -4,6 +4,10 @@ Automated process to deploy FSS Storage stack on each new S3 bucket using Lambda
 
 ![](architecture.png)
 # Deploy via CloudFormation
+   * If not already present, [deploy a Scanner Stack](https://cloudone.trendmicro.com/docs/file-storage-security/stack-add/#AddScanner) in your Cloud One Account
+   * Obtain the stack's Cloud One ID and SQSURL
+      - The Stack ID and SQSURL can be obtained with list stacks api call
+      - See [FSS API Documentation](https://cloudone.trendmicro.com/docs/file-storage-security/api-create-stack/) for details.
    * In AWS Console > Services > CloudFormation
     - **Create New Stack**
       - Prerequisites: *template is ready*
@@ -11,12 +15,10 @@ Automated process to deploy FSS Storage stack on each new S3 bucket using Lambda
       - Select: **[storage_stack.yaml](https://github.com/JustinDPerkins/FSS-Storage-Automation-Lambda/blob/main/cloudformation/storage_stack.yaml)**
       - **Next**
       - StackName: *enter name for stack*
-      - FSSAPI: `Cloud One FSS API Key`
+      - C1API: [`Cloud One API Key`](https://cloudone.trendmicro.com/docs/container-security/api-key-create/)
       - SQSURL: `http://scanner-stack-sqs-queue-url.com`
       - StackID: `Scanner Stack ID`
       - **Create Stack**
-         - The Stack ID and SQSURL can be obtained with list stacks api call
-         - See [FSS API Documentation](https://cloudone.trendmicro.com/docs/file-storage-security/api-create-stack/) for details.
       
 # Deploy via AWS Console
 <details>
@@ -81,3 +83,15 @@ Automated process to deploy FSS Storage stack on each new S3 bucket using Lambda
       - State: **Enabled**
       - Create rule 
 </details>
+
+# A Note on Tags
+
+The Lambda will choose whether or not to deploy a storage stack depending on a bucket's tags. See below for details:
+
+| Tag            | Value  | Behavior                       |
+| -------------- | ------ | ------------------------------ |
+| [no tag]       | [none] | Storage Stack deployed         |
+| `FSSMonitored` | `yes`  | Storage Stack deployed         |
+| `FSSMonitored` | `no`   | Storage Stack **not** deployed |
+
+The script will add the proper tags automatically to untagged buckets, but you can *exclude* buckets by adding a `FSSMonitored` == `no` tag. 
