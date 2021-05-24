@@ -107,8 +107,8 @@ def add_storage(bucket_name, ext_id, account_id, kms_arn):
     }
     S3_Encryption = {"ParameterKey": "KMSKeyARNForBucketSSE", "ParameterValue": kms_arn}
     cft_client = boto3.client("cloudformation")
-    print("creating stack ..")
-    response = cft_client.create_stack(
+    logger.info("Creating stack ..")
+    cft_client.create_stack(
         StackName="C1-FSS-Storage-" + bucket_name,
         TemplateURL="https://file-storage-security.s3.amazonaws.com/latest/templates/FSS-Storage-Stack.template",
         Parameters=[
