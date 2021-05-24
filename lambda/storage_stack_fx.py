@@ -63,16 +63,12 @@ def lambda_handler(event, context):
             no_tags = "does not have tags"
             tag_status = no_tags
         if tag_status == "does not have tags":
-            addTag(s3_client, bucket_name)
+            add_tag(s3_client, bucket_name, tag_list=[])
             add_storage(bucket_name, ext_id, account_id, kms_arn)
         else:
             for tags in tag_status:
                 if tags["Key"] == "FSSMonitored":
-                    if (
-                        (tags["Value"] == "No")
-                        or (tags["Value"] == "no")
-                        or (tags["Value"] == "NO")
-                    ):
+                    if tags["Value"].lower() == "no":
                         # if tag FSSMonitored is no; quit
                         logger.info(
                             "S3 :"
@@ -80,28 +76,20 @@ def lambda_handler(event, context):
                             + " has tag FSSMonitored == no; aborting"
                         )
                         return 0
-                    elif (
-                        (tags["Value"] != "yes")
-                        or (tags["Value"] != "Yes")
-                        or (tags["Value"] != "YES")
-                    ):
-                        addTag(s3_client, bucket_name)
+                    elif tags["Value"].lower() != "yes":
+                        add_tag(s3_client, bucket_name, tag_list=tag_status)
                         add_storage(bucket_name, ext_id, account_id, kms_arn)
                         break
-            addTag(s3_client, bucket_name)
+            add_tag(s3_client, bucket_name, tag_list=tag_status)
+            add_storage(bucket_name, ext_id, account_id, kms_arn)
 
 
-def addTag(s3_client, bucket_name):
-    logger.info("Bucket: " + bucket_name + " has no tags; adding")
-    response = s3_client.put_bucket_tagging(
+def add_tag(s3_client, bucket_name, tag_list):
+    logger.info(f"Bucket: {bucket_name} lacks an FSSMonitored tag; adding")
+    s3_client.put_bucket_tagging(
         Bucket=bucket_name,
-        Tagging={
-            "TagSet": [
-                {"Key": "FSSMonitored", "Value": "Yes"},
-            ]
-        },
+        Tagging={"TagSet": tag_list},
     )
-    logger.debug(response)
 
 
 def add_storage(bucket_name, ext_id, account_id, kms_arn):
