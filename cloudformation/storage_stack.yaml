@@ -4,6 +4,12 @@ Metadata:
   License: MIT-License
   Version: 1.2
 Resources:
+  apiparameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      Description: C1 WS API KEY
+      Type: String
+      Value: !Ref C1WSAPI
   lambdarole:
     Type: AWS::IAM::Role
     Properties:
@@ -26,68 +32,72 @@ Resources:
         Statement:
           - Effect: Allow
             Action:
-              - "lambda:CreateFunction"
-              - "sqs:DeleteMessage"
-              - "cloudformation:ListExports"
-              - "cloudformation:ListStackInstances"
-              - "sqs:ReceiveMessage"
-              - "iam:CreateRole"
-              - "s3:CreateBucket"
-              - "lambda:GetFunctionConfiguration"
-              - "cloudformation:DescribeStackResource"
-              - "iam:AttachRolePolicy"
-              - "iam:PutRolePolicy"
-              - "cloudformation:DescribeStackEvents"
-              - "iam:DetachRolePolicy"
-              - "lambda:DeleteFunction"
-              - "sns:Subscribe"
-              - "s3:PutObjectTagging"
-              - "cloudformation:ListStackResources"
               - "iam:GetRole"
-              - "sqs:GetQueueUrl"
-              - "lambda:InvokeFunction"
-              - "lambda:GetEventSourceMapping"
-              - "cloudformation:DescribeStackInstance"
-              - "sns:CreateTopic"
-              - "sqs:SendMessage"
+              - "iam:AttachRolePolicy"
+              - "iam:CreateRole"
+              - "iam:PutRolePolicy"
+              - "iam:DetachRolePolicy"
               - "iam:DeleteRole"
-              - "sqs:GetQueueAttributes"
+              - "iam:PassRole"
+              - "iam:DeleteRolePolicy"
+              - "iam:GetRolePolicy"
               - "logs:CreateLogGroup"
               - "logs:CreateLogStream"
               - "logs:PutLogEvents"
+              - "logs:DescribeLogGroups"
+              - "logs:PutRetentionPolicy"
               - "s3:PutBucketTagging"
-              - "cloudformation:DescribeStacks"
               - "s3:PutObject"
               - "s3:GetObject"
-              - "sts:AssumeRole"
-              - "sqs:AddPermission"
-              - "cloudformation:GetTemplate"
-              - "iam:GetRolePolicy"
               - "s3:GetBucketTagging"
+              - "s3:ListBucket"
+              - "s3:PutEncryptionConfiguration"
+              - "s3:GetObjectTagging"
+              - "s3:ListAllMyBuckets"
+              - "s3:CreateBucket"
+              - "s3:PutObjectTagging"
+              - "sts:AssumeRole"
+              - "ssm:PutParameter"
+              - "ssm:GetParameter"
+              - "ssm:AddTagsToResource"
+              - "ssm:RemoveTagsFromResource"
+              - "cloudformation:DescribeStacks"
+              - "cloudformation:GetTemplate"
+              - "cloudformation:GetTemplateSummary"
+              - "cloudformation:CreateStack"
+              - "cloudformation:ListStacks"
+              - "cloudformation:DescribeStackInstance"
+              - "cloudformation:ListStackResources"
+              - "cloudformation:DescribeStackEvents"
+              - "cloudformation:DescribeStackResource"
+              - "cloudformation:ListExports"
+              - "cloudformation:ListStackInstances"
               - "lambda:GetLayerVersion"
               - "lambda:PublishLayerVersion"
-              - "sns:SetTopicAttributes"
-              - "s3:ListBucket"
+              - "lambda:CreateFunction"
+              - "lambda:GetFunctionConfiguration"
+              - "lambda:DeleteFunction"
+              - "lambda:InvokeFunction"
+              - "lambda:GetEventSourceMapping"
               - "lambda:CreateEventSourceMapping"
-              - "sqs:ListQueueTags"
-              - "s3:PutEncryptionConfiguration"
-              - "iam:PassRole"
-              - "sns:Publish"
-              - "iam:DeleteRolePolicy"
-              - "s3:GetObjectTagging"
-              - "sqs:SetQueueAttributes"
-              - "cloudformation:ListStacks"
-              - "sqs:ListQueues"
-              - "sns:GetTopicAttributes"
-              - "logs:DescribeLogGroups"
               - "lambda:GetFunction"
-              - "cloudformation:GetTemplateSummary"
               - "lambda:AddPermission"
-              - "sqs:ListDeadLetterSourceQueues"
-              - "s3:ListAllMyBuckets"
-              - "cloudformation:CreateStack"
+              - "sqs:AddPermission"
+              - "sqs:GetQueueUrl"
+              - "sqs:DeleteMessage"
+              - "sqs:ReceiveMessage"
+              - "sqs:ListQueueTags"
+              - "sqs:SetQueueAttributes"
+              - "sqs:ListQueues"
+              - "sqs:GetQueueAttributes"
               - "sqs:CreateQueue"
-              - "logs:PutRetentionPolicy"
+              - "sqs:ListDeadLetterSourceQueues"
+              - "sqs:SendMessage"
+              - "sns:CreateTopic"
+              - "sns:Publish"
+              - "sns:SetTopicAttributes"
+              - "sns:Subscribe"
+              - "sns:GetTopicAttributes"     
             Resource: "*"
       Roles:
         - !Ref lambdarole
@@ -105,23 +115,27 @@ Resources:
           import json
           import logging
           import os
-
           import boto3
           import urllib3
           from botocore.exceptions import ClientError
-
           http = urllib3.PoolManager()
           logger = logging.getLogger()
           logger.setLevel(logging.INFO)
           logger.info("Logging setup Complete")
-          fss_key = os.environ["C1_API"]
+
+          fss_key = os.environ["WS_API"]
           queue_name = os.environ["SQS_Name"]
-          stack_id = os.environ["STACK_ID"]
+          stack_name = os.environ["STACK_NAME"]
           get_url = "https://cloudone.trendmicro.com/api/filestorage/external-id"
           post_url = "https://cloudone.trendmicro.com/api/filestorage/stacks"
-
-
+          
           def lambda_handler(event, context):
+              #get api key value from ssm-ps
+              ssm = boto3.client('ssm')
+              parameter = ssm.get_parameter(Name=fss_key)
+              ps_value = str(parameter["Parameter"]["Value"])
+              ws_key = ps_value
+              
               # gather bucket name from event
               bucket_name = event["detail"]["requestParameters"]["bucketName"]
               # filter event to bucket name
@@ -137,7 +151,7 @@ Resources:
                       get_url,
                       headers={
                           "Content-Type": "application/json",
-                          "api-secret-key": fss_key,
+                          "api-secret-key": ws_key,
                           "Api-Version": "v1",
                       },
                   )
@@ -147,6 +161,16 @@ Resources:
                   # gather aws account ID
                   account_id = event["account"]
                   logger.info("AWS account ID: " + account_id)
+                  
+                  #gather stack id
+                  id_call = http.request('GET', post_url, headers = {'Content-Type': 'application/json', 'api-secret-key': ws_key, 'Api-Version': 'v1'})
+                  id_resp = json.loads(id_call.data.decode('utf-8'))
+                  for data in id_resp['stacks']:
+                      if 'name' in data and data['name'] is not None:
+                          if stack_name == data['name']:
+                              stack_id = data['stackID']
+                              logger.info(stack_id)
+
                   s3_client = boto3.client("s3")
                   # check if encryption exsists on bucket
                   try:
@@ -168,7 +192,7 @@ Resources:
                       tag_status = no_tags
                   if tag_status == "does not have tags":
                       add_tag(s3_client, bucket_name, tag_list=[])
-                      add_storage(bucket_name, ext_id, account_id, kms_arn)
+                      add_storage(ws_key, bucket_name, ext_id, account_id, stack_id, kms_arn)
                   else:
                       for tags in tag_status:
                           if tags["Key"] == "FSSMonitored":
@@ -181,21 +205,17 @@ Resources:
                                   )
                                   return 0
                               elif tags["Value"].lower() != "yes":
-                                  add_storage(bucket_name, ext_id, account_id, kms_arn)
+                                  add_storage(ws_key, bucket_name, ext_id, account_id, stack_id, kms_arn)
                                   break
                       add_tag(s3_client, bucket_name, tag_list=tag_status)
-                      add_storage(bucket_name, ext_id, account_id, kms_arn)
-
-
+                      add_storage(ws_key, bucket_name, ext_id, account_id, stack_id, kms_arn)
           def add_tag(s3_client, bucket_name, tag_list):
               logger.info(f"Bucket: {bucket_name} lacks an FSSMonitored tag; adding")
               s3_client.put_bucket_tagging(
                   Bucket=bucket_name,
                   Tagging={"TagSet": tag_list},
               )
-
-
-          def add_storage(bucket_name, ext_id, account_id, kms_arn):
+          def add_storage(ws_key, bucket_name, ext_id, account_id, stack_id, kms_arn):
               # deploy storage stack
               ExternalID = {"ParameterKey": "ExternalID", "ParameterValue": ext_id}
               S3BucketToScan = {"ParameterKey": "S3BucketToScan", "ParameterValue": bucket_name}
@@ -243,7 +263,7 @@ Resources:
                   post_url,
                   headers={
                       "Content-Type": "application/json",
-                      "api-secret-key": fss_key,
+                      "api-secret-key": ws_key,
                       "Api-Version": "v1",
                   },
                   body=encoded_msg,
@@ -254,10 +274,10 @@ Resources:
       MemorySize: 128
       Environment:
         Variables:
-          C1_API: !Ref C1API
+          WS_API: !Ref apiparameter
           SQS_Name: !Ref SQSURL
-          STACK_ID: !Ref StackID
-  cloudwatchevent:
+          STACK_NAME: !Ref StackName
+  eventbridgeevent:
     Type: AWS::Events::Rule
     Properties:
       State: "ENABLED"
@@ -281,18 +301,19 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
       SourceArn: !GetAtt
-        - cloudwatchevent
+        - eventbridgeevent
         - Arn
 Parameters:
-  C1API:
+  C1WSAPI:
     Type: String
     Default: ""
-    Description: Enter your Cloud One API Key
+    Description: Enter your Cloud One Workload Security API Key
   SQSURL:
     Type: String
     Default: ""
     Description: Enter the Scanner stack SQS URL
-  StackID:
+  StackName:
     Type: String
     Default: ""
-    Description: Enter the Scanner stack ID
+    Description: Enter the Scanner stack Name
+    
