@@ -1,23 +1,26 @@
 import json
 import logging
 import os
-
 import boto3
 import urllib3
 from botocore.exceptions import ClientError
-
 http = urllib3.PoolManager()
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 logger.info("Logging setup Complete")
-fss_key = os.environ["C1_API"]
+
+fss_key = os.environ["WS_API"]
 queue_name = os.environ["SQS_Name"]
-stack_id = os.environ["STACK_ID"]
+stack_name = os.environ["STACK_NAME"]
 get_url = "https://cloudone.trendmicro.com/api/filestorage/external-id"
 post_url = "https://cloudone.trendmicro.com/api/filestorage/stacks"
 
-
 def lambda_handler(event, context):
+    # get secret
+    secrets = boto3.client('secretsmanager').get_secret_value(SecretId=fss_key)
+    sm_data = json.loads(secrets["SecretString"])
+    ws_key = sm_data["wsapikey"]
+    
     # gather bucket name from event
     bucket_name = event["detail"]["requestParameters"]["bucketName"]
     # filter event to bucket name
@@ -33,7 +36,7 @@ def lambda_handler(event, context):
             get_url,
             headers={
                 "Content-Type": "application/json",
-                "api-secret-key": fss_key,
+                "api-secret-key": ws_key,
                 "Api-Version": "v1",
             },
         )
@@ -43,6 +46,16 @@ def lambda_handler(event, context):
         # gather aws account ID
         account_id = event["account"]
         logger.info("AWS account ID: " + account_id)
+        
+        #gather stack id
+        id_call = http.request('GET', post_url, headers = {'Content-Type': 'application/json', 'api-secret-key': ws_key, 'Api-Version': 'v1'})
+        id_resp = json.loads(id_call.data.decode('utf-8'))
+        for data in id_resp['stacks']:
+            if 'name' in data and data['name'] is not None:
+                if stack_name == data['name']:
+                    stack_id = data['stackID']
+                    logger.info(stack_id)
+
         s3_client = boto3.client("s3")
         # check if encryption exsists on bucket
         try:
@@ -64,7 +77,7 @@ def lambda_handler(event, context):
             tag_status = no_tags
         if tag_status == "does not have tags":
             add_tag(s3_client, bucket_name, tag_list=[])
-            add_storage(bucket_name, ext_id, account_id, kms_arn)
+            add_storage(ws_key, bucket_name, ext_id, account_id, stack_id, kms_arn)
         else:
             for tags in tag_status:
                 if tags["Key"] == "FSSMonitored":
@@ -77,21 +90,17 @@ def lambda_handler(event, context):
                         )
                         return 0
                     elif tags["Value"].lower() != "yes":
-                        add_storage(bucket_name, ext_id, account_id, kms_arn)
+                        add_storage(ws_key, bucket_name, ext_id, account_id, stack_id, kms_arn)
                         break
             add_tag(s3_client, bucket_name, tag_list=tag_status)
-            add_storage(bucket_name, ext_id, account_id, kms_arn)
-
-
+            add_storage(ws_key, bucket_name, ext_id, account_id, stack_id, kms_arn)
 def add_tag(s3_client, bucket_name, tag_list):
     logger.info(f"Bucket: {bucket_name} lacks an FSSMonitored tag; adding")
     s3_client.put_bucket_tagging(
         Bucket=bucket_name,
         Tagging={"TagSet": tag_list},
     )
-
-
-def add_storage(bucket_name, ext_id, account_id, kms_arn):
+def add_storage(ws_key, bucket_name, ext_id, account_id, stack_id, kms_arn):
     # deploy storage stack
     ExternalID = {"ParameterKey": "ExternalID", "ParameterValue": ext_id}
     S3BucketToScan = {"ParameterKey": "S3BucketToScan", "ParameterValue": bucket_name}
@@ -139,7 +148,7 @@ def add_storage(bucket_name, ext_id, account_id, kms_arn):
         post_url,
         headers={
             "Content-Type": "application/json",
-            "api-secret-key": fss_key,
+            "api-secret-key": ws_key,
             "Api-Version": "v1",
         },
         body=encoded_msg,
