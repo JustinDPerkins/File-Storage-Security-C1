@@ -1,0 +1,61 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "VisualEditor0",
+            "Effect": "Allow",
+            "Action": [
+                "logs:DescribeLogGroups",
+                "logs:DeleteLogGroup",
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+                "logs:PutRetentionPolicy",
+                "iam:DeletePolicy",
+                "iam:PassRole",
+                "iam:DetachRolePolicy",
+                "iam:GetRole",
+                "iam:GetRolePolicy",
+                "iam:DeleteRole",
+                "iam:DeleteRolePolicy",
+                "sns:Unsubscribe",
+                "sns:SetTopicAttributes",
+                "sns:GetTopicAttributes",
+                "sns:RemovePermission",
+                "sns:DeleteTopic",
+                "cloudformation:ListExports",
+                "cloudformation:ListStackInstances",
+                "cloudformation:DescribeStackResource",
+                "cloudformation:ListStackResources",
+                "cloudformation:DescribeStackEvents",
+                "cloudformation:DescribeStackInstance",
+                "cloudformation:GetTemplateSummary",
+                "cloudformation:DescribeStacks",
+                "cloudformation:GetTemplate",
+                "cloudformation:DeleteStack",
+                "cloudformation:ListStacks",
+                "sqs:ListQueues",
+                "sqs:GetQueueUrl",
+                "sqs:ListQueueTags",
+                "sqs:ReceiveMessage",
+                "sqs:DeleteMessage",
+                "sqs:RemovePermission",
+                "sqs:GetQueueAttributes",
+                "sqs:ListDeadLetterSourceQueues",
+                "sqs:DeleteQueue",
+                "s3:*",
+                "secretsmanager:GetSecretValue",
+                "lambda:DeleteFunction",
+                "lambda:InvokeFunction",
+                "lambda:GetEventSourceMapping",
+                "lambda:GetFunction",
+                "lambda:RemovePermission",
+                "sts:AssumeRole"
+                
+                
+                
+            ],
+            "Resource": "*"
+        }
+    ]
+}
