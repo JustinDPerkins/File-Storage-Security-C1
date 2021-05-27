@@ -5,11 +5,10 @@ Metadata:
   Version: 1.2
 Resources:
   apiparameter:
-    Type: AWS::SSM::Parameter
+    Type: AWS::SecretsManager::Secret
     Properties: 
       Description: C1 WS API KEY
-      Type: String
-      Value: !Ref C1WSAPI
+      SecretString: !Sub '{"wsapikey":"${C1WSAPI}"}'
   lambdarole:
     Type: AWS::IAM::Role
     Properties:
@@ -57,10 +56,7 @@ Resources:
               - "s3:CreateBucket"
               - "s3:PutObjectTagging"
               - "sts:AssumeRole"
-              - "ssm:PutParameter"
-              - "ssm:GetParameter"
-              - "ssm:AddTagsToResource"
-              - "ssm:RemoveTagsFromResource"
+              - "secretsmanager:GetSecretValue"
               - "cloudformation:DescribeStacks"
               - "cloudformation:GetTemplate"
               - "cloudformation:GetTemplateSummary"
@@ -130,11 +126,10 @@ Resources:
           post_url = "https://cloudone.trendmicro.com/api/filestorage/stacks"
           
           def lambda_handler(event, context):
-              #get api key value from ssm-ps
-              ssm = boto3.client('ssm')
-              parameter = ssm.get_parameter(Name=fss_key)
-              ps_value = str(parameter["Parameter"]["Value"])
-              ws_key = ps_value
+              # get secret
+              secrets = boto3.client('secretsmanager').get_secret_value(SecretId=fss_key)
+              sm_data = json.loads(secrets["SecretString"])
+              ws_key = sm_data["wsapikey"]
               
               # gather bucket name from event
               bucket_name = event["detail"]["requestParameters"]["bucketName"]
@@ -306,14 +301,14 @@ Resources:
 Parameters:
   C1WSAPI:
     Type: String
-    Default: ""
+    NoEcho: true
     Description: Enter your Cloud One Workload Security API Key
   SQSURL:
     Type: String
     Default: ""
-    Description: Enter the Scanner stack SQS URL
+    Description: Enter the Scanner Stack SQS URL
   StackName:
     Type: String
     Default: ""
-    Description: Enter the Scanner stack Name
+    Description: Enter the Scanner Stack Name
     
