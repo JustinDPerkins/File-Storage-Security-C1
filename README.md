@@ -1,6 +1,7 @@
-# Automation using Lambda to Deploy FSS- Storage Stack 
+# Automation using Lambda to Deploy/Remove FSS- Storage Stack 
 
-Automated process to deploy an FSS storage stack on each new S3 bucket using Lambda. The storage stack will be linked to the scanner stack previously defined.
+1. Automated process to deploy an FSS storage stack on each new S3 bucket using Lambda. The storage stack will be linked to the scanner stack previously defined.
+2. Automated process to remove an FSS storage stack on each deleted S3 bucket event using Lambda. If the S3 bucket has an associated FSS storage Stack it will be removed.
 
 ![architecture](architecture.png)
 
