@@ -1,71 +1,37 @@
 # Automation using Lambda to Deploy FSS- Storage Stack 
 
-Automated process to deploy FSS Storage stack on each new S3 bucket using Lambda. The storage stack will be linked to the scanner stack previously defined.
+Automated process to deploy an FSS storage stack on each new S3 bucket using Lambda. The storage stack will be linked to the scanner stack previously defined.
 
-![](architecture.png)
+![architecture](architecture.png)
+
 # Deploy via CloudFormation
-   * In AWS Console > Services > CloudFormation
-    - **Create New Stack**
-      - Prerequisites: *template is ready*
-      - Specify Template: *upload from file*
-      - Select: **[strage_stack.yaml]()**
-      - **Next**
-      - StackName: *enter name for stack*
-      - FSSAPI: `Cloud One FSS API Key`
+
+   * If not already present, [deploy a Scanner Stack](https://cloudone.trendmicro.com/docs/file-storage-security/stack-add/#AddScanner) in the Cloud One - File Storage Security account.
+   * Obtain the Scanner Stack Name and SQS URL
+      - Go to AWS Console > Services > CloudFormation
+      - Click **Name of Scanner Stack**
+         - Copy **Stack Name** 
+      - Under **Outputs** tab
+         - Copy **ScannerQueueURL**
+   * Go to AWS Console > Services > CloudFormation
+    - Click **Create New Stack**
+      - Prerequisites: `template is ready`
+      - Specify Template: `upload from file`
+      - Select: **[storage_stack.yaml](https://github.com/trendmicro/cloudone-filestorage-plugins/blob/master/deployment/aws-python-storage-stack-automation/storage_stack.yaml)**
+      - Click **Next**
+      - StackName: `Enter name for stack`
+      - C1WSAPI: [Cloud One Workload Security API Key](https://cloudone.trendmicro.com/docs/file-storage-security/api-create-stack/#Prerequisite)
       - SQSURL: `http://scanner-stack-sqs-queue-url.com`
-      - StackID: `Scanner Stack ID`
-      - **Create Stack**
+      - StackName: `Enter name of Scanner Stack`
+      - Click **Create Stack**
+      
+# A Note on Tags
+The Lambda will choose whether or not to deploy a storage stack depending on a bucket's tags. **See below for details**:
 
-# Create IAM Role/Policy for lambda execution
-   * In AWS Console > Services > IAM
-    - In left panel under **Access Management** click **Policy**
-    - Click **Create Policy**
-        - Select **JSON**
-        - paste **fss_policy.json**
-        - Save
-  * In AWS Console > Services > IAM
-    - In left panel under **Access Management** click **Roles**
-    - Create Role
-        - Entity: AWS Service
-        - Service: Lambda
-        - select policy made previously
-        - Save
+| Tag            | Value  | Behavior                       |
+| -------------- | ------ | ------------------------------ |
+| [no tag]       | [none] | Storage Stack deployed         |
+| `FSSMonitored` | `yes`  | Storage Stack deployed         |
+| `FSSMonitored` | `no`   | Storage Stack **NOT** deployed |
 
-# Create Lambda Function
-   * In AWS Console > Services > Lambda >  Create Function
-      - Select **Author from scratch**
-      - Function Name: *example-name*
-      - Runtime: **Python 3.8**
-      - Select Service role: **Select role created in previous steps**
-      - Create Function
-   * Under Code
-      - Copy and Paste: **storage_stack_fx.py**
-      - Deploy
-   * Under Configuration
-      - Environment Variables
-        - **C1-API** : *your fss api key*
-        - **SQS_Name** : *scanner sqs url*
-        - **STACK_ID** : *scanner stack id*
-      - See [FSS API Documentation](https://cloudone.trendmicro.com/docs/file-storage-security/api-create-stack/) for details.
-      - Configuration
-        - General configuration > Edit
-        - increase timeout to 8m
-
-# Create CloudWatch Rule
-   * In AWS Console > Services > CloudWatch
-      - In left panel under **Events** click **Rules**
-   * Create New CloudWatch Rule
-      - Event Source: Event Pattern
-      - Service Name: S3
-      - Event Type: Bucket Level Operations
-      - Specific Operation(s): CreateBucket
-   * Add Target
-      - Select: **Lambda Function**
-      - Choose the function made in  first step
-      - leave the rest to defaults
-   * Configure Rule details
-      - Name: *example-rule-name*
-      - Description: 
-      - State: **Enabled**
-      - Create rule 
- 
+The script will add the proper tags automatically to untagged buckets, but you can *exclude* buckets by adding a `FSSMonitored` == `no` tag. 
