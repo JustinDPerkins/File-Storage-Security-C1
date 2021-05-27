@@ -20,7 +20,7 @@ Automated process to deploy an FSS storage stack on each new S3 bucket using Lam
       - Select: **[storage_stack.yaml](https://github.com/JustinDPerkins/FSS-Storage-Automation-Lambda/blob/main/cloudformation/storage_stack.yaml)**
       - Click **Next**
       - StackName: `Enter name for stack`
-      - C1WSAPI: [Cloud One Workload Security API Key](https://cloudone.trendmicro.com/docs/container-security/api-key-create/)
+      - C1WSAPI: [Cloud One Workload Security API Key](https://cloudone.trendmicro.com/docs/file-storage-security/api-create-stack/#Prerequisite)
       - SQSURL: `http://scanner-stack-sqs-queue-url.com`
       - StackName: `Enter name of Scanner Stack`
       - Click **Create Stack**
