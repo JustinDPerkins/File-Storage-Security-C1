@@ -3,6 +3,17 @@
     "Statement": [
         {
             "Action": [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+                "logs:DescribeLogGroups",
+                "logs:PutRetentionPolicy"
+            ],
+            "Resource": "*",
+            "Effect": "Allow"
+        },
+        {
+            "Action": [
                 "iam:GetRole",
                 "iam:AttachRolePolicy",
                 "iam:CreateRole",
@@ -11,24 +22,30 @@
                 "iam:DeleteRole",
                 "iam:PassRole",
                 "iam:DeleteRolePolicy",
-                "iam:GetRolePolicy",
-                "logs:CreateLogGroup",
-                "logs:CreateLogStream",
-                "logs:PutLogEvents",
-                "logs:DescribeLogGroups",
-                "logs:PutRetentionPolicy",
+                "iam:GetRolePolicy"
+            ],
+            "Resource": "*",
+            "Effect": "Allow"
+        },
+        {
+            "Action": [
                 "s3:PutBucketTagging",
                 "s3:PutObject",
                 "s3:GetObject",
                 "s3:GetBucketTagging",
                 "s3:ListBucket",
+                "s3:GetEncryptionConfiguration",
                 "s3:PutEncryptionConfiguration",
                 "s3:GetObjectTagging",
                 "s3:ListAllMyBuckets",
                 "s3:CreateBucket",
-                "s3:PutObjectTagging",
-                "sts:AssumeRole",
-                "secretsmanager:GetSecretValue",
+                "s3:PutObjectTagging"
+            ],
+            "Resource": "*",
+            "Effect": "Allow"
+        },
+        {
+            "Action": [
                 "cloudformation:DescribeStacks",
                 "cloudformation:GetTemplate",
                 "cloudformation:GetTemplateSummary",
@@ -39,7 +56,13 @@
                 "cloudformation:DescribeStackEvents",
                 "cloudformation:DescribeStackResource",
                 "cloudformation:ListExports",
-                "cloudformation:ListStackInstances",
+                "cloudformation:ListStackInstances"
+            ],
+            "Resource": "*",
+            "Effect": "Allow"
+        },
+        {
+            "Action": [
                 "lambda:GetLayerVersion",
                 "lambda:PublishLayerVersion",
                 "lambda:CreateFunction",
@@ -49,7 +72,13 @@
                 "lambda:GetEventSourceMapping",
                 "lambda:CreateEventSourceMapping",
                 "lambda:GetFunction",
-                "lambda:AddPermission",
+                "lambda:AddPermission"
+            ],
+            "Resource": "*",
+            "Effect": "Allow"
+        },
+        {
+            "Action": [
                 "sqs:AddPermission",
                 "sqs:GetQueueUrl",
                 "sqs:DeleteMessage",
@@ -60,7 +89,13 @@
                 "sqs:GetQueueAttributes",
                 "sqs:CreateQueue",
                 "sqs:ListDeadLetterSourceQueues",
-                "sqs:SendMessage",
+                "sqs:SendMessage"
+            ],
+            "Resource": "*",
+            "Effect": "Allow"
+        },
+        {
+            "Action": [
                 "sns:CreateTopic",
                 "sns:Publish",
                 "sns:SetTopicAttributes",
@@ -68,6 +103,20 @@
                 "sns:GetTopicAttributes"
             ],
             "Resource": "*",
+            "Effect": "Allow"
+        },
+        {
+            "Action": [
+                "sts:AssumeRole"
+            ],
+            "Resource": "<arn of storage stack lambda>",
+            "Effect": "Allow"
+        },
+        {
+            "Action": [
+                "secretsmanager:GetSecretValue"
+            ],
+            "Resource": "<arn of secrets manager for lambda>",
             "Effect": "Allow"
         }
     ]
