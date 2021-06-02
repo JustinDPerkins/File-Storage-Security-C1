@@ -192,12 +192,20 @@ Resources:
                               print(stack_id)
 
                   s3_client = boto3.client("s3")
-                  # check if encryption exsists on bucket
+                  # check if encryption exists on bucket
                   try:
                       response = s3_client.get_bucket_encryption(Bucket=bucket_name)
-                      kms_arn = response["ServerSideEncryptionConfiguration"]["Rules"][0]["ApplyServerSideEncryptionByDefault"]["KMSMasterKeyID"]
-                      print("Key Arn: " + kms_arn)
+                      try:
+                          # kms check
+                          kms_arn = response["ServerSideEncryptionConfiguration"]["Rules"][0]["ApplyServerSideEncryptionByDefault"]["KMSMasterKeyID"]
+                          print("Key Arn: " + kms_arn)
+                      except KeyError:
+                          # sse-s3 check
+                          sse_s3_bucket = response["ServerSideEncryptionConfiguration"]["Rules"][0]["ApplyServerSideEncryptionByDefault"]['SSEAlgorithm']
+                          print("AWS SSE-S3: "+ sse_s3_bucket)
+                          kms_arn = ""
                   except ClientError:
+                      # not encrypted
                       print("S3: " + bucket_name + " has no encryption enabled")
                       kms_arn = ""
                   # check bucket tags
@@ -300,14 +308,18 @@ Resources:
           def check_status(ws_key, url):
               #gather stack status
               st_call = http.request('GET', url , headers = {'api-secret-key': ws_key, 'Api-Version': 'v1'})
-              x = json.loads(st_call.data.decode('utf-8'))['status']
-              print("Status: " + x)
-              while x == 'creating':
+              status = json.loads(st_call.data.decode('utf-8'))['status']
+              print("Status: " + status)
+              while status == 'creating':
                   st_call = http.request('GET', url , headers = {'api-secret-key': ws_key, 'Api-Version': 'v1'})
-                  x = json.loads(st_call.data.decode('utf-8'))['status']
-              else:
-                  print("Status: " + x)
+                  status = json.loads(st_call.data.decode('utf-8'))['status']
+              if status == 'ok':
+                  print("Status: " + status)
                   print('Deployed Successfully')
+              else:
+                print('Deployment Failed')
+      TracingConfig:
+        Mode: Active
       MemorySize: 128
       Environment:
         Variables:
@@ -353,4 +365,3 @@ Parameters:
     Type: String
     Default: ""
     Description: Enter the Scanner Stack Name
-    
