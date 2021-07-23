@@ -24,7 +24,7 @@ This script will deploy File Storage Security Stack to all buckets unless define
 
 <hr>
 
-**Required Variables** 
+**Required Variables edit in Script**
    - filename = `exclude.txt`
    - scanner_stack_name = `<Scanner Stack Name>`
    - ws_api = `<Cloud One - Workload Security API Key>`
