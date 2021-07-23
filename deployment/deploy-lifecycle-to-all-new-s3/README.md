@@ -1,7 +1,6 @@
 # Automation using Lambda to Deploy/Remove FSS- Storage Stack 
 
 
-
 ![architecture](architecture.png)
 
 # Automate complete S3 FSS lifecycle Stack Deployment/Removal
@@ -20,7 +19,7 @@
     - Click **Create New Stack**
       - Prerequisites: `template is ready`
       - Specify Template: `upload from file`
-      - Select: **[automate_add_remove_fss_storage_stack.yaml](https://github.com/JustinDPerkins/FSS-Storage-Automation-Lambda/blob/main/cloudformation/automate_add_remove_fss_storage_stack.yaml)**
+      - Select: **[automate_add_remove_fss_storage_stack.yaml]https://github.com/JustinDPerkins/File-Storage-Security-C1/blob/main/deployment/deploy-lifecycle-to-all-new-s3/cloudformation/automate_add_remove_fss_storage_stack.yaml)**
       - Click **Next**
       - StackName: `Enter name for stack`
       - C1WSAPI: [Cloud One Workload Security API Key](https://cloudone.trendmicro.com/docs/file-storage-security/api-create-stack/#Prerequisite)
@@ -46,7 +45,7 @@
     - Click **Create New Stack**
       - Prerequisites: `template is ready`
       - Specify Template: `upload from file`
-      - Select: **[storage_stack.yaml](https://github.com/JustinDPerkins/FSS-Storage-Automation-Lambda/blob/main/cloudformation/storage_stack.yaml)**
+      - Select: **[storage_stack.yaml](https://github.com/JustinDPerkins/File-Storage-Security-C1/blob/main/deployment/deploy-lifecycle-to-all-new-s3/cloudformation/storage_stack.yaml)**
       - Click **Next**
       - StackName: `Enter name for stack`
       - C1WSAPI: [Cloud One Workload Security API Key](https://cloudone.trendmicro.com/docs/file-storage-security/api-create-stack/#Prerequisite)
@@ -65,7 +64,7 @@
     - Click **Create New Stack**
       - Prerequisites: `template is ready`
       - Specify Template: `upload from file`
-      - Select: **[implode_storage_stack.yaml](https://github.com/trendmicro/cloudone-filestorage-plugins/blob/master/deployment/aws-python-storage-stack-automation/implode_storage_stack.yaml)**
+      - Select: **[implode_storage_stack.yaml](https://github.com/JustinDPerkins/File-Storage-Security-C1/blob/main/deployment/deploy-lifecycle-to-all-new-s3/cloudformation/implode_storage_stack.yaml)**
       - Click **Next**
       - StackName: `Enter name for stack`
       - C1WSAPI: [Cloud One Workload Security API Key](https://cloudone.trendmicro.com/docs/file-storage-security/api-create-stack/#Prerequisite)
