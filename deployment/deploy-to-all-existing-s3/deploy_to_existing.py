@@ -93,29 +93,22 @@ def get_encryption_region(list_of_buckets):
             response = s3_client.get_bucket_tagging(Bucket=bucket_name)
             tags = response["TagSet"]
             tag_status = tags
-        except ClientError:
-            no_tags = "does not have tags"
-            tag_status = no_tags
-        if tag_status == "does not have tags":
-            add_tag(s3_client, bucket_name, tag_list=[])
-            deploy_storage(kms_arn, region, bucket_name)
-        else:
             for tags in tag_status:
                 if tags["Key"] == "FSSMonitored":
                     if tags["Value"].lower() == "no":
-                        # if tag FSSMonitored is no; quit
+                        # if tag FSSMonitored is no; skip
                         print(
                             "S3: "
                             + bucket_name
-                            + " has tag FSSMonitored == no; aborting"
+                            + " has tag FSSMonitored == no; skipping"
                         )
-                        return 0
                     elif tags["Value"].lower() != "yes":
                         deploy_storage(kms_arn, region, bucket_name)
-                        break
-            add_tag(s3_client, bucket_name, tag_list=tag_status)
+        except ClientError:
+            no_tags = "does not have tags"
+            tag_status = no_tags
+            add_tag(s3_client, bucket_name, tag_list=[])
             deploy_storage(kms_arn, region, bucket_name)
-        
 
 def add_tag(s3_client, bucket_name, tag_list):
     tag_list.append({'Key':'FSSMonitored', 'Value': 'Yes'})
