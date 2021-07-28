@@ -20,7 +20,7 @@ This script will deploy File Storage Security Stack to all buckets unless define
  - Clone this repository
  - After cloning repo:
  ```
-   cd .\FSS-Storage-Automation-Lambda\deployment\deploy-to-all-existing-s3\
+   cd .\File-Storage-Security-C1\deployment\deploy-to-all-existing-s3\
 ```
 
 **2. Edit Exlusions File**
