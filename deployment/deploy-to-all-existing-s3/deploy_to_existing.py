@@ -2,6 +2,7 @@ import os.path
 import json
 import time
 import boto3
+import argparse
 import urllib3
 from botocore.config import Config
 from botocore.exceptions import ClientError
@@ -14,14 +15,19 @@ All storage stack will link to 1 Scanner Stack you define
 '''
 
 #variables needed
+parser = argparse.ArgumentParser(description='Deploy to All Buckets')
+parser.add_argument("--account", required=True, type=str, help="AWS Account id")
+parser.add_argument("--sqs", required=True, type=str, help="SQS URL")
+parser.add_argument("--scanner", required=True, type=str, help="Scanner Stack Name")
+parser.add_argument("--apikey", required=True, type=str, help="Workload Security API Key")
+args = parser.parse_args()
+
+scanner_stack_name = args.scanner
+aws_account_id = args.account
+sqs_url = args.sqs
+ws_api = args.apikey
 filename = "exclude.txt"
 stacks_api_url = "https://cloudone.trendmicro.com/api/filestorage/"
-scanner_stack_name = "<Scanner Stack Name>"
-ws_api = "<Cloud One - Workload Security API Key>"
-sqs_url = "https://<your scanner sqs url here>"
-aws_account_id = "<aws account id>"
-
-#functions
 
 #get list of buckets to exclude from deployment
 def get_exclusions(filename):
@@ -31,7 +37,6 @@ def get_exclusions(filename):
         with open(filename) as f:
             content = f.read().splitlines()
             get_buckets(content)
-            print(content)
 
 #get list of buckets available in aws
 def get_buckets(content):
@@ -83,7 +88,41 @@ def get_encryption_region(list_of_buckets):
                 region = response["LocationConstraint"]
                 if region is None:
                     region = "us-east-1"
-        deploy_storage(kms_arn, region, bucket_name)
+         # check bucket tags
+        try:
+            response = s3_client.get_bucket_tagging(Bucket=bucket_name)
+            tags = response["TagSet"]
+            tag_status = tags
+        except ClientError:
+            no_tags = "does not have tags"
+            tag_status = no_tags
+        if tag_status == "does not have tags":
+            add_tag(s3_client, bucket_name, tag_list=[])
+            deploy_storage(kms_arn, region, bucket_name)
+        else:
+            for tags in tag_status:
+                if tags["Key"] == "FSSMonitored":
+                    if tags["Value"].lower() == "no":
+                        # if tag FSSMonitored is no; quit
+                        print(
+                            "S3: "
+                            + bucket_name
+                            + " has tag FSSMonitored == no; aborting"
+                        )
+                        return 0
+                    elif tags["Value"].lower() != "yes":
+                        deploy_storage(kms_arn, region, bucket_name)
+                        break
+            add_tag(s3_client, bucket_name, tag_list=tag_status)
+            deploy_storage(kms_arn, region, bucket_name)
+        
+
+def add_tag(s3_client, bucket_name, tag_list):
+    tag_list.append({'Key':'FSSMonitored', 'Value': 'Yes'})
+    s3_client.put_bucket_tagging(
+        Bucket=bucket_name,
+        Tagging={"TagSet": tag_list},
+    )
 
 #function to deploy fss storage stack
 def deploy_storage(kms_arn, region, bucket_name):
@@ -105,7 +144,11 @@ def deploy_storage(kms_arn, region, bucket_name):
             "Api-Version": "v1",
         },
     )
-    ext_id = json.loads(r.data.decode("utf-8"))['externalID']
+    try:
+        ext_id = json.loads(r.data.decode("utf-8"))['externalID']
+    except json.decoder.JSONDecodeError:
+        time.sleep(1)
+        ext_id = json.loads(r.data.decode("utf-8"))['externalID']
     #set fss api doc parameters
     ExternalID = {"ParameterKey": "ExternalID", "ParameterValue": ext_id}
     S3BucketToScan = {"ParameterKey": "S3BucketToScan", "ParameterValue": bucket_name}
