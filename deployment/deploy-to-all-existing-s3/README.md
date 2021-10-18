@@ -1,3 +1,5 @@
+Under Work!!- Not ready
+
 # Deploy to All Existing S3 Resource
 This script will deploy File Storage Security Stack to all buckets unless defined in exclusions text file. After deployment the stack will be registered with Cloud One Console. 
 
