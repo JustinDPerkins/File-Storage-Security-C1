@@ -4,11 +4,11 @@ Metadata:
   License: MIT-License
   Version: 1.2
 Resources:
-  c1api:
+  wsapi:
     Type: AWS::SecretsManager::Secret
     Properties: 
-      Description: C1 API KEY
-      SecretString: !Sub '{"c1apikey":"${C1API}"}'
+      Description: C1 WS API KEY
+      SecretString: !Sub '{"wsapikey":"${C1WSAPI}"}'
   storagelambdarole:
     Type: AWS::IAM::Role
     Properties:
@@ -121,7 +121,7 @@ Resources:
           - Effect: Allow
             Action:
               - "secretsmanager:GetSecretValue"     
-            Resource: !Ref c1api
+            Resource: !Ref wsapi
       Roles:
         - !Ref storagelambdarole
   storagelambda:
@@ -142,19 +142,15 @@ Resources:
           import urllib3
           from botocore.exceptions import ClientError
           http = urllib3.PoolManager()
-          
           fss_key = os.environ["WS_API"]
           queue_name = os.environ["SCANNER_SQS_NAME"]
-          c1_region = os.environ["C1_REGION"]
           stack_name = os.environ["SCANNER_STACK_NAME"]
-          stacks_api_url = "https://filestorage."+c1_region+".cloudone.trendmicro.com/api/"
-          
+          stacks_api_url = "https://cloudone.trendmicro.com/api/filestorage/"
           def lambda_handler(event, context):
               # get secret
               secrets = boto3.client('secretsmanager').get_secret_value(SecretId=fss_key)
               sm_data = json.loads(secrets["SecretString"])
-              new_api_format = sm_data["c1apikey"]
-              cloud_one_api_key = "ApiKey "+new_api_format
+              ws_key = sm_data["wsapikey"]
               
               # gather bucket name from event
               bucket_name = event["detail"]["requestParameters"]["bucketName"]
@@ -170,7 +166,7 @@ Resources:
                       "GET",
                       stacks_api_url+"external-id",
                       headers={
-                          "Authorization": cloud_one_api_key,
+                          "api-secret-key": ws_key,
                           "Api-Version": "v1",
                       },
                   )
@@ -181,7 +177,7 @@ Resources:
                   print("AWS account ID: " + account_id)
                   
                   #gather scanner stack id
-                  id_call = http.request('GET', stacks_api_url+"stacks", headers = {'Authorization': cloud_one_api_key, 'Api-Version': 'v1'})
+                  id_call = http.request('GET', stacks_api_url+"stacks", headers = {'api-secret-key': ws_key, 'Api-Version': 'v1'})
                   try:
                     id_resp = json.loads(id_call.data.decode('utf-8'))['stacks']
                   except json.decoder.JSONDecodeError:
@@ -219,7 +215,7 @@ Resources:
                       tag_status = no_tags
                   if tag_status == "does not have tags":
                       add_tag(s3_client, bucket_name, tag_list=[])
-                      add_storage(cloud_one_api_key, bucket_name, ext_id, account_id, stack_id, kms_arn)
+                      add_storage(ws_key, bucket_name, ext_id, account_id, stack_id, kms_arn)
                   else:
                       for tags in tag_status:
                           if tags["Key"] == "FSSMonitored":
@@ -232,10 +228,10 @@ Resources:
                                   )
                                   return 0
                               elif tags["Value"].lower() != "yes":
-                                  add_storage(cloud_one_api_key, bucket_name, ext_id, account_id, stack_id, kms_arn)
+                                  add_storage(ws_key, bucket_name, ext_id, account_id, stack_id, kms_arn)
                                   break
                       add_tag(s3_client, bucket_name, tag_list=tag_status)
-                      add_storage(cloud_one_api_key, bucket_name, ext_id, account_id, stack_id, kms_arn)
+                      add_storage(ws_key, bucket_name, ext_id, account_id, stack_id, kms_arn)
           def add_tag(s3_client, bucket_name, tag_list):
               tag_list.append({'Key':'FSSMonitored', 'Value': 'Yes'})
               print(f"Bucket: {bucket_name} lacks an FSSMonitored tag; adding")
@@ -243,9 +239,8 @@ Resources:
                   Bucket=bucket_name,
                   Tagging={"TagSet": tag_list},
               )
-          def add_storage(cloud_one_api_key, bucket_name, ext_id, account_id, stack_id, kms_arn):
+          def add_storage(ws_key, bucket_name, ext_id, account_id, stack_id, kms_arn):
               # deploy storage stack
-              CloudOneRegion = {"ParameterKey": "CloudOneRegion", "ParameterValue": c1_region}
               ExternalID = {"ParameterKey": "ExternalID", "ParameterValue": ext_id}
               S3BucketToScan = {"ParameterKey": "S3BucketToScan", "ParameterValue": bucket_name}
               Trigger_with_event = {
@@ -266,7 +261,6 @@ Resources:
                   Parameters=[
                       ExternalID,
                       S3BucketToScan,
-                      CloudOneRegion,
                       scanner_queue_url,
                       Trigger_with_event,
                       scanner_aws_account,
@@ -278,9 +272,9 @@ Resources:
               cft_waiter.wait(StackName="C1-FSS-Storage-" + bucket_name)
               res = cft_client.describe_stacks(StackName="C1-FSS-Storage-" + bucket_name)
               storage_stack = res["Stacks"][0]["Outputs"][2]["OutputValue"]
-              add_to_cloudone(cloud_one_api_key, stack_id, storage_stack)
+              add_to_cloudone(ws_key, stack_id, storage_stack)
           # register storage stack to cloud one
-          def add_to_cloudone(cloud_one_api_key, stack_id, storage_stack):
+          def add_to_cloudone(ws_key, stack_id, storage_stack):
               print("FSS StorageRole Arn: " + storage_stack)
               # add to c1
               payload = {
@@ -295,26 +289,26 @@ Resources:
                   stacks_api_url+"stacks",
                   headers={
                       "Content-Type": "application/json",
-                      "Authorization": cloud_one_api_key,
+                      "api-secret-key": ws_key,
                       "Api-Version": "v1",
                   },
                   body=encoded_msg,
               )
               transform = json.loads(resp.data.decode("utf-8"))
-              url = "https://filestorage."+c1_region+"cloudone.trendmicro.com/api/stacks/"+transform['stackID']
+              url = "https://cloudone.trendmicro.com/api/filestorage/stacks/"+transform['stackID']
               try:
-                check_status(cloud_one_api_key, url)
+                check_status(ws_key, url)
               except json.decoder.JSONDecodeError:
                 time.sleep(1)
-                check_status(cloud_one_api_key, url)
+                check_status(ws_key, url)
           #check storage stack status
-          def check_status(cloud_one_api_key, url):
+          def check_status(ws_key, url):
               #gather stack status
-              st_call = http.request('GET', url , headers = {'Authorization': cloud_one_api_key, 'Api-Version': 'v1'})
+              st_call = http.request('GET', url , headers = {'api-secret-key': ws_key, 'Api-Version': 'v1'})
               status = json.loads(st_call.data.decode('utf-8'))['status']
               print("Status: " + status)
               while status == 'creating':
-                  st_call = http.request('GET', url , headers = {'Authorization': cloud_one_api_key, 'Api-Version': 'v1'})
+                  st_call = http.request('GET', url , headers = {'api-secret-key': ws_key, 'Api-Version': 'v1'})
                   status = json.loads(st_call.data.decode('utf-8'))['status']
               if status == 'ok':
                   print("Status: " + status)
@@ -326,8 +320,7 @@ Resources:
       MemorySize: 128
       Environment:
         Variables:
-          C1_REGION: !Ref C1RegionEndpoint
-          WS_API: !Ref c1api
+          WS_API: !Ref wsapi
           SCANNER_SQS_NAME: !Ref SQSURL
           SCANNER_STACK_NAME: !Ref StackName
   eventbridgeevent:
@@ -441,7 +434,7 @@ Resources:
           - Effect: "Allow"
             Action:
               - "secretsmanager:GetSecretValue"  
-            Resource: !Ref c1api
+            Resource: !Ref wsapi
           - Effect: Allow
             Action:
               - "sts:AssumeRole"
@@ -469,18 +462,14 @@ Resources:
           from botocore.exceptions import ClientError
           http = urllib3.PoolManager()
           fss_key = os.environ["WS_API"]
-          c1_region = os.environ["C1_REGION"]
-
-          ext_id_url = "https://filestorage."+c1_region+".cloudone.trendmicro.com/api/external-id"
-          stacks_url = "https://filestorage."+c1_region+".cloudone.trendmicro.com/api/stacks"
-          delete_url = "https://filestorage."+c1_region+".cloudone.trendmicro.com/api/stacks/"
-          
+          ext_id_url = "https://cloudone.trendmicro.com/api/filestorage/external-id"
+          stacks_url = "https://cloudone.trendmicro.com/api/filestorage/stacks"
+          delete_url = "https://cloudone.trendmicro.com/api/filestorage/stacks/"
           def lambda_handler(event, context):
               # get secret
               secrets = boto3.client('secretsmanager').get_secret_value(SecretId=fss_key)
               sm_data = json.loads(secrets["SecretString"])
-              new_api_format = sm_data["c1apikey"]
-              cloud_one_api_key = "ApiKey "+new_api_format
+              ws_key = sm_data["wsapikey"]
               #gather bucket name from event
               bucket_name = event['detail']['requestParameters']['bucketName']
               print("S3 Bucket: " + bucket_name)
@@ -490,7 +479,7 @@ Resources:
                   "GET",
                   ext_id_url,
                   headers={
-                      "Authorization": cloud_one_api_key,
+                      "api-secret-key": ws_key,
                       "Api-Version": "v1",
                     },
                 )
@@ -510,7 +499,7 @@ Resources:
                   "status": "ok",
                   "type": "storage"
                 }  
-              id_call = http.request('GET', stacks_url, q_params, headers = {'Authorization': cloud_one_api_key, 'Api-Version': 'v1'})
+              id_call = http.request('GET', stacks_url, q_params, headers = {'api-secret-key': ws_key, 'Api-Version': 'v1'})
               try:
                   id_resp = json.loads(id_call.data.decode('utf-8'))
               except json.decoder.JSONDecodeError:
@@ -523,7 +512,7 @@ Resources:
                           stack_id = data['stackID']
                           print(stack_name)
                           print(stack_id)
-                          stack_removal(cloud_one_api_key, stack_id,stack_name)
+                          stack_removal(ws_key, stack_id,stack_name)
               if "next" in id_resp:
                   has_next_value = True
                   next = id_resp['next']
@@ -535,7 +524,7 @@ Resources:
                       "type": "storage",
                       "cursor": next
                     }
-                  id_call = http.request('GET', stacks_url, q_params, headers = {'Authorization': cloud_one_api_key, 'Api-Version': 'v1'})
+                  id_call = http.request('GET', stacks_url, q_params, headers = {'api-secret-key': ws_key, 'Api-Version': 'v1'})
                   try:
                       id_resp = json.loads(id_call.data.decode('utf-8'))
                   except:
@@ -548,25 +537,24 @@ Resources:
                               stack_id = data['stackID']
                               print(stack_name)
                               print(stack_id)
-                              stack_removal(cloud_one_api_key, stack_id, stack_name)
+                              stack_removal(ws_key, stack_id, stack_name)
                               has_next_value = False
                   if "next" in id_resp:
                       next = id_resp['next']
                   else:
                       has_next_value = False
-          def stack_removal(cloud_one_api_key, stack_id, stack_name):
+          def stack_removal(ws_key, stack_id, stack_name):
               #delete cft stack
               cft_client = boto3.client("cloudformation")
               response = cft_client.delete_stack(StackName=stack_name)
               #delete stack from c1-fss
-              id_call = http.request('DELETE', delete_url+stack_id, headers = {'Authorization': cloud_one_api_key, 'Api-Version': 'v1'})
+              id_call = http.request('DELETE', delete_url+stack_id, headers = {'api-secret-key': ws_key, 'Api-Version': 'v1'})
       TracingConfig:
         Mode: Active
       MemorySize: 128
       Environment:
         Variables:
-          C1_REGION: !Ref C1RegionEndpoint
-          WS_API: !Ref c1api
+          WS_API: !Ref wsapi
   removeeventbridgeevent:
     Type: AWS::Events::Rule
     Properties:
@@ -594,13 +582,10 @@ Resources:
         - removeeventbridgeevent
         - Arn
 Parameters:
-  C1RegionEndpoint:
-    Type: String
-    Description: Enter your Cloud One Account Region Endpoint (US-1)
-  C1API:
+  C1WSAPI:
     Type: String
     NoEcho: true
-    Description: Enter your Cloud One API Key
+    Description: Enter your Cloud One Workload Security API Key
   SQSURL:
     Type: String
     Default: ""
