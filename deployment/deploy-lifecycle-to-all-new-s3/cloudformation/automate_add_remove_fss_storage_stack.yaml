@@ -304,7 +304,7 @@ Resources:
               url = "https://filestorage."+c1_region+".cloudone.trendmicro.com/api/stacks/"+transform['stackID']
               try:
                 check_status(cloud_one_api_key, url)
-              except json.decoder.JSONDecodeError:
+              except (json.decoder.JSONDecodeError, KeyError):
                 time.sleep(1)
                 check_status(cloud_one_api_key, url)
           #check storage stack status
