@@ -34,3 +34,14 @@ This script will deploy File Storage Security Stack to all buckets unless define
    ```
       .\deploy_to_existing.py --account <aws account id> --c1region <cloud one region; example: us-1> --scanner <Scanner Stack Name> --sqs <SQS URL> --apikey <CloudOne-API-Key>
    ```  
+
+
+# A Note on Tags
+
+The Script will choose whether or not to deploy a storage stack depending on a bucket's tags. **See below for details**:
+
+| Tag            | Value  | Behavior                       |
+| -------------- | ------ | ------------------------------ |
+| [no tag]       | [none] | Storage Stack deployed         |
+| `FSSMonitored` | `yes`  | Stack Already Exists(skip)     |
+| `FSSMonitored` | `no`   | Storage Stack **NOT** deployed |
