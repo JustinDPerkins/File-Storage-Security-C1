@@ -5,7 +5,7 @@ This script will deploy File Storage Security Stack to all buckets unless define
 
 **Before you deploy**
 
-   * If not already present, [deploy a Scanner Stack](https://cloudone.trendmicro.com/docs/file-storage-security/stack-add/#AddScanner) in the Cloud One - File Storage Security account.
+   * If not already present, [deploy a Scanner Stack](https://cloudone.trendmicro.com/docs/file-storage-security/stack-add-aws/) in the Cloud One - File Storage Security account.
   * Obtain the Scanner Stack Name and SQS URL
       - Go to AWS Console > Services > CloudFormation
       - Click **Name of Scanner Stack**
