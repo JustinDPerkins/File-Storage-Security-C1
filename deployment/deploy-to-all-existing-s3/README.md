@@ -14,7 +14,7 @@ This script will deploy File Storage Security Stack to all buckets unless define
          - Copy **ScannerQueueURL**
       - StackName: `Enter name for stack`
    * Obtain your Cloud One API Key
-      - Generate API Key: [Cloud One Workload Security API Key](https://cloudone.trendmicro.com/docs/file-storage-security/api-create-stack/#Prerequisite)
+      - Generate API Key: [Cloud One API Key](https://cloudone.trendmicro.com/docs/account-and-user-management/c1-api-key/)
 
 <hr>
 
@@ -32,7 +32,7 @@ This script will deploy File Storage Security Stack to all buckets unless define
 **3. Run Script**
    - Open terminal/cmd:
    ```
-      .\deploy_to_existing.py --account <aws account id> --c1region <cloud one region; example: us-1> --scanner <Scanner Stack Name> --sqs <SQS URL> --apikey <CloudOne-API-Key>
+      .\deploy.py --account <aws account id> --c1region <cloud one region; example: us-1> --scanner <Scanner Stack Name> --sqs <SQS URL> --apikey <CloudOne-API-Key>
    ```  
 
 
