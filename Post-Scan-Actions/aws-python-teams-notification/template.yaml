@@ -1,0 +1,53 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+
+Metadata:
+  AWS::ServerlessRepo::Application:
+    Name: cloudone-filestorage-plugin-teams
+    Description: >-
+      After a scan occurs, this example application sends events of detected malicious objects to a defined MS Teams channel
+    Author: Trend Micro Cloud One File Storage Security
+    SpdxLicenseId: Apache-2.0
+    LicenseUrl: ../../LICENSE
+    ReadmeUrl: README.md
+    Labels: [trendmicro, cloudone, filestorage, s3, bucket, plugin, teams, notifications]
+    HomePageUrl: https://github.com/JustinDPerkins/File-Storage-Security-C1
+    SemanticVersion: 1.0.0
+    SourceCodeUrl: https://github.com/JustinDPerkins/File-Storage-Security-C1/blob/main/Post-Scan-Actions/aws-python-slack-notification/handler.py
+
+Parameters:
+  TeamsURL:
+    Type: String
+    Description: The MS Teams Webhook URL.
+  ScanResultTopicARN:
+    Type: String
+    Description: The ARN of the scan result SNS topic in storage stack.
+
+Resources:
+  TeamsLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: s3://serverless-app-repo-scripts/teams/handler.zip
+      Handler: handler.lambda_handler
+      Runtime: python3.8
+      MemorySize: 512
+      Timeout: 10
+      Tracing: Active
+      Environment:
+        Variables:
+          TEAMS_URL: !Ref TeamsURL
+          
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource:
+              - "*"
+      Events:
+        ScanResult:
+          Type: SNS
+          Properties:
+            Topic: !Ref ScanResultTopicARN
