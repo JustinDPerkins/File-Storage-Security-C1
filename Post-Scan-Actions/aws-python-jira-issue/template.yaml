@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+
+Metadata:
+  AWS::ServerlessRepo::Application:
+    Name: cloudone-filestorage-plugin-jira
+    Description: >-
+      After a scan occurs, this example application creates a issue from detected malicious objects to Jira
+    Author: Trend Micro Cloud One File Storage Security
+    SpdxLicenseId: Apache-2.0
+    LicenseUrl: ../../LICENSE
+    ReadmeUrl: README.md
+    Labels: [trendmicro, cloudone, filestorage, s3, bucket, plugin, jira, issue]
+    HomePageUrl: https://github.com/JustinDPerkins/File-Storage-Security-C1/
+    SemanticVersion: 1.0.0
+    SourceCodeUrl: https://github.com/JustinDPerkins/File-Storage-Security-C1/blob/main/Post-Scan-Actions/aws-python-jira-issue/handler.py
+
+Parameters:
+  JiraUrl:
+    Type: String
+    Default: ""
+    Description: Your Jira URL <https://<example>.atlassian.net>
+  JiraProjectKey:
+    Type: String
+    Default: ""
+    Description: Jira Project key identifier 
+  JiraEmail:
+    Type: String
+    Description: Jira user email
+  JiraApi:
+    Type: String
+    NoEcho: true
+    Description: Enter your Jira API Key
+  JiraAssignee:
+    Type: String
+    Default: ""
+    Description: Assignee ID to assign Jira issue
+  ScanResultTopicARN:
+    Type: String
+    Description: The ARN of the scan result SNS topic in storage stack.
+
+Resources:
+  jiraapi:
+    Type: AWS::SecretsManager::Secret
+    Properties: 
+      Description: JIRA API KEY
+      SecretString: !Sub '{"jiraapikey":"${JiraApi}"}'
+
+  JiraLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: s3://serverless-app-repo-scripts/jira/handler.zip
+      Handler: handler.lambda_handler
+      Runtime: python3.8
+      MemorySize: 512
+      Timeout: 10
+      Tracing: Active
+      Environment:
+        Variables:
+          JIRA_EMAIL: !Ref JiraEmail
+          JIRA_API: !Ref jiraapi
+          JIRA_KEY: !Ref JiraProjectKey
+          JIRA_URL: !Ref JiraUrl
+          JIRA_ASSIGNEE: !Ref JiraAssignee
+          
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource:
+              - "*"
+            Effect: Allow
+            Action:
+              - "secretsmanager:GetSecretValue"     
+            Resource: !Ref jiraapi
+      Events:
+        ScanResult:
+          Type: SNS
+          Properties:
+            Topic: !Ref ScanResultTopicARN

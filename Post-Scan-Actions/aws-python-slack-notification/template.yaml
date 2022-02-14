@@ -1,0 +1,65 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+
+Metadata:
+  AWS::ServerlessRepo::Application:
+    Name: cloudone-filestorage-plugin-slack
+    Description: >-
+      After a scan occurs, this example application sends events of detected malicious objects to a defined Slack channel
+    Author: Trend Micro Cloud One File Storage Security
+    SpdxLicenseId: Apache-2.0
+    LicenseUrl: ../../LICENSE
+    ReadmeUrl: README.md
+    Labels: [trendmicro, cloudone, filestorage, s3, bucket, plugin, slack, notifications]
+    HomePageUrl: https://github.com/JustinDPerkins/File-Storage-Security-C1
+    SemanticVersion: 1.0.0
+    SourceCodeUrl: https://github.com/JustinDPerkins/File-Storage-Security-C1/blob/main/Post-Scan-Actions/aws-python-slack-notification/handler.py
+
+Parameters:
+  SlackURL:
+    Type: String
+    Description: The Slack Webhook URL.
+  ScanResultTopicARN:
+    Type: String
+    Description: The ARN of the scan result SNS topic in storage stack.
+  SlackChannel:
+    Type: String
+    Default: ''
+    Description: |
+      The Channel name used in Slack to send notifications.
+  SlackUsername:
+    Type: String
+    Default: ''
+    Description: |
+      The UserName to recieve notifications.
+
+Resources:
+  SlackLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: s3://serverless-app-repo-scripts/slack/handler.zip
+      Handler: handler.lambda_handler
+      Runtime: python3.8
+      MemorySize: 512
+      Timeout: 10
+      Tracing: Active
+      Environment:
+        Variables:
+          SLACK_URL: !Ref SlackURL
+          SLACK_CHANNEL: !Ref SlackChannel
+          SLACK_USERNAME: !Ref SlackUsername
+          
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource:
+              - "*"
+      Events:
+        ScanResult:
+          Type: SNS
+          Properties:
+            Topic: !Ref ScanResultTopicARN
