@@ -25,7 +25,7 @@ After a malicious scan event occurs, this example Lambda function sends a notifi
 
 ### From AWS Lambda Console
 
-1. Visit [the app's page on the AWS Lambda Console](https://console.aws.amazon.com/lambda/home?#/create/app?applicationId=arn:aws:serverlessrepo:us-east-1:415485722356:applications/cloudone-filestorage-plugin-action-promote-or-quarantine).
+1. Visit [the app's page on the AWS Lambda Console](https://console.aws.amazon.com/lambda/home?region=us-east-1#/create/app?applicationId=arn:aws:serverlessrepo:us-east-1:024368254241:applications/CloudOne-FSS-Plugin-Teams).
 2. Fill in the parameters.
 3. Check the `I acknowledge that this app creates custom IAM roles.` checkbox.
 4. Click `Deploy`.
