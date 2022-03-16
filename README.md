@@ -19,5 +19,5 @@ You will need:
    - AWS Account ID
    - Cloud One API key
    - Successfully Deployed Scanner Stack
-   - Sanner Stack Name
+   - Scanner Stack Name
    - Scanner Stack SQS URL
