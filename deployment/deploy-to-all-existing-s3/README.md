@@ -25,7 +25,7 @@ This script will deploy File Storage Security Stack to all buckets unless define
    cd .\File-Storage-Security-C1\deployment\deploy-to-all-existing-s3\
 ```
 
-**2. Edit Exlusions File**
+**2. Edit Exclusions File**
    * Update/Edit the file called `exclude.txt` with names of S3 buckets to exclude from FSS deployment.
    - 1 per line, Example: [exclude.txt](https://github.com/JustinDPerkins/File-Storage-Security-C1/blob/main/deployment/deploy-to-all-existing-s3/exclude.txt)
 
