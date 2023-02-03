@@ -1,4 +1,4 @@
-from cgitb import reset
+#from cgitb import reset
 from http.client import responses
 import os.path
 import json
@@ -234,7 +234,9 @@ def deploy_storage(kms_arn, region, bucket_name):
         time.sleep(1)
         id_resp = json.loads(id_call.data.decode('utf-8'))['stacks']
     for data in id_resp:
-        stack_id = data['stackID']
+        if 'name' in data and data['name'] is not None:
+            if scanner_stack_name == data['name']:
+                stack_id = data['stackID']
     add_to_cloudone(ws_api, stack_id, storage_stack)
 
 # call to cloudone to register stacks in FSS
