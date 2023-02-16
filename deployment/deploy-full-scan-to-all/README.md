@@ -1,4 +1,4 @@
-# Deploy Schedule Scan Plugin to all exisitng S3
+# Deploy Schedule Scan Plugin to all existing S3
 This script will deploy The Cloud One - FSS scheduled full scan plugin stack to all storage stacks linked to a defined Scanner. After a plugin deployment the Scanner Stacks SQS Access Policy will be updated to include the needed AWS Principals. 
 
 **Requirements**
