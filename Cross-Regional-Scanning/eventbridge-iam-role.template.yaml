@@ -1,0 +1,29 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Create IAM Role for EventBridge to send events to Main Region EventBus
+Parameters:
+  SourceRegionEventBusARN:
+    Type: String
+    Description: ARN of the Event bus in a different account or region
+Resources:
+  EventBridgeIAMRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: FSS-EventBridge-Role
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: [events.amazonaws.com]
+              Action: ["sts:AssumeRole"]
+        Policies:
+          - PolicyName: MyPolicy
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action: ["events:PutEvents"]
+                  Resource: !Ref SourceRegionEventBusARN
+Outputs:
+  EventBridgeIAMRoleARN:
+      Value: !GetAtt EventBridgeIAMRole.Arn
