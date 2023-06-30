@@ -1,0 +1,145 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description:  Trend Micro File Storage Security Main Root Stack. AWS Org deployment to S3 Fleet for Cross-Region Scanning.
+
+Parameters:
+  DeployScannerTo:
+    Description: Specify the Main AWS Regions to deploy the File Storage Scanner in.
+    Type: String
+    Default: 'us-east-1'
+  RegionsToRoute:
+    Description: Specify all AWS Regions to deploy EventBridge Rule in to route to Scanner Region.[Comma Delimited List - No Spaces].
+    Type: CommaDelimitedList
+    Default: 'us-east-1'
+  SourceRegionEventBusARN:
+    Type: String
+    Description: ARN of the Event bus in a different account or region
+  OrgOUID:
+    Description: Specify AWS Organizational Unit IDs within AWS Organization whose accounts have the target instances (ou-name) for distribution. (Account IDs are only allowed when updating)
+    Type: CommaDelimitedList
+    Default: ''
+  CloudOneRegion:
+    Description: The region of the Trend Micro Cloud One services.
+    Type: String
+    Default: us-1
+  ExternalID:
+    Description: "The External ID is for future use with updating Lambdas and also to address and prevent the 'confused deputy' problem."
+    Type: String
+    Default: 365081194606
+  FSSBucketName:
+    ConstraintDescription:
+      File Storage Security bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-).
+    Default: fss-fleet-artifacts
+    Description: ""
+    Type: String
+  FSSKeyPrefix:
+    ConstraintDescription:
+      File Storage Security key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and forward slash (/).
+    Default: latest/
+    Description: ""
+    Type: String
+
+Resources:
+  EventBridgeIAMRole:
+    Type: AWS::CloudFormation::StackSet
+    Properties:
+      StackSetName: FSS-EventBridgeRole
+      TemplateURL: "https://fss-fleet-artifacts-us-east-1.s3.amazonaws.com/eventbridge-iam-role.template.yaml"
+      AutoDeployment:
+        Enabled: true
+        RetainStacksOnAccountRemoval: true
+      Capabilities:
+          - CAPABILITY_AUTO_EXPAND
+          - CAPABILITY_IAM
+          - CAPABILITY_NAMED_IAM
+      Parameters: 
+        - 
+          ParameterKey: SourceRegionEventBusARN
+          ParameterValue: !Ref SourceRegionEventBusARN
+      PermissionModel: SERVICE_MANAGED
+      StackInstancesGroup:
+          - Regions: 
+            - !Ref DeployScannerTo
+            DeploymentTargets:
+              OrganizationalUnitIds: !Ref OrgOUID
+
+  ScannerStackSet:
+    Type: AWS::CloudFormation::StackSet
+    DependsOn:
+         - "EventBridgeIAMRole"
+    Properties:
+      StackSetName: FSS-ScannerStackSet
+      TemplateURL: "https://fss-fleet-artifacts-us-east-1.s3.amazonaws.com/latest/templates/FSS-Mass-Deployment-Scanner-Stack.template"
+      AutoDeployment:
+        Enabled: true
+        RetainStacksOnAccountRemoval: true
+      Capabilities:
+          - CAPABILITY_AUTO_EXPAND
+          - CAPABILITY_IAM
+          - CAPABILITY_NAMED_IAM
+      Parameters: 
+        - 
+          ParameterKey: CloudOneRegion
+          ParameterValue: !Ref CloudOneRegion
+        - 
+          ParameterKey: ExternalID
+          ParameterValue: !Ref ExternalID
+        - 
+          ParameterKey: FSSBucketName
+          ParameterValue: !Ref FSSBucketName
+        - 
+          ParameterKey: FSSKeyPrefix
+          ParameterValue: !Ref FSSKeyPrefix
+      PermissionModel: SERVICE_MANAGED
+      StackInstancesGroup:
+          - Regions: 
+            - !Ref DeployScannerTo
+            DeploymentTargets:
+              OrganizationalUnitIds: !Ref OrgOUID
+
+  EventBridgeRulesStackSet:
+    Type: AWS::CloudFormation::StackSet
+    DependsOn:
+         - "EventBridgeIAMRole"
+    Properties:
+      StackSetName: EventBridgeRegionRuleStackSet
+      TemplateURL: "https://fss-fleet-artifacts-us-east-1.s3.amazonaws.com/eventbridge-rules.template.yaml"
+      AutoDeployment:
+        Enabled: true
+        RetainStacksOnAccountRemoval: true
+      Capabilities:
+          - CAPABILITY_AUTO_EXPAND
+          - CAPABILITY_IAM
+          - CAPABILITY_NAMED_IAM
+      Parameters: 
+        - 
+          ParameterKey: SourceRegionEventBusARN
+          ParameterValue: !Ref SourceRegionEventBusARN
+      PermissionModel: SERVICE_MANAGED
+      StackInstancesGroup:
+          - Regions: !Ref RegionsToRoute
+            DeploymentTargets:
+              OrganizationalUnitIds: !Ref OrgOUID
+  
+  CustomEnableEventBridgeonS3:
+    Type: AWS::CloudFormation::StackSet
+    DependsOn:
+         - "ScannerStackSet"
+    Properties:
+      StackSetName: EnableS3EventBridgeStackSet
+      TemplateURL: "https://fss-fleet-artifacts-us-east-1.s3.amazonaws.com/enable-s3-notifications.template.yaml"
+      AutoDeployment:
+        Enabled: true
+        RetainStacksOnAccountRemoval: true
+      Capabilities:
+          - CAPABILITY_AUTO_EXPAND
+          - CAPABILITY_IAM
+          - CAPABILITY_NAMED_IAM
+      PermissionModel: SERVICE_MANAGED
+      StackInstancesGroup:
+          - Regions: 
+            - !Ref DeployScannerTo
+            DeploymentTargets:
+              OrganizationalUnitIds: !Ref OrgOUID

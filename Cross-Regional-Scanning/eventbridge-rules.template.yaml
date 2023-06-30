@@ -1,0 +1,28 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Create EventBriodge Rule Pattern to Send to Main Region EventBus
+Parameters:
+  SourceRegionEventBusARN:
+    Type: String
+    Description: ARN of the Event bus in a different account or region
+Resources:
+  FSSEventBridgeRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Name: FSSEventBridgeRule
+      EventPattern:
+        source:
+          - 'aws.s3'
+        detail-type:
+          - 'Object Created'
+      Targets:
+        - Arn: !Ref SourceRegionEventBusARN
+          Id: FSSEventBusTarget
+          RoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/FSS-EventBridge-Role"
+
+Outputs:
+  EventBridgeRuleName:
+    Value: !Ref FSSEventBridgeRule
+    Description: Name of the created EventBridge rule
+  EventBridgeRuleARN:
+    Value: !GetAtt FSSEventBridgeRule.Arn
+    Description: ARN of the created EventBridge rule
