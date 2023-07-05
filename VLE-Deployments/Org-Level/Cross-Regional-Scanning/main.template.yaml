@@ -3,16 +3,13 @@ Description:  Trend Micro File Storage Security Main Root Stack. AWS Org deploym
 
 Parameters:
   DeployScannerTo:
-    Description: Specify the Main AWS Regions to deploy the File Storage Scanner in.
+    Description: Specify the Main AWS Regions to deploy the File Storage Scanner in.[The Scanner will be deployed in this one region in every Account]
     Type: String
     Default: 'us-east-1'
   RegionsToRoute:
-    Description: Specify all AWS Regions to deploy EventBridge Rule in to route to Scanner Region.[Comma Delimited List - No Spaces].
+    Description: Specify all AWS Regions to deploy EventBridge Rule in to route to Scanner Region.[Comma Delimited List - No Spaces between].
     Type: CommaDelimitedList
-    Default: 'us-east-1'
-  SourceRegionEventBusARN:
-    Type: String
-    Description: ARN of the Event bus in a different account or region
+    Default: 'us-east-2'
   OrgOUID:
     Description: Specify AWS Organizational Unit IDs within AWS Organization whose accounts have the target instances (ou-name) for distribution. (Account IDs are only allowed when updating)
     Type: CommaDelimitedList
@@ -54,10 +51,6 @@ Resources:
           - CAPABILITY_AUTO_EXPAND
           - CAPABILITY_IAM
           - CAPABILITY_NAMED_IAM
-      Parameters: 
-        - 
-          ParameterKey: SourceRegionEventBusARN
-          ParameterValue: !Ref SourceRegionEventBusARN
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
           - Regions: 
@@ -101,8 +94,6 @@ Resources:
 
   EventBridgeRulesStackSet:
     Type: AWS::CloudFormation::StackSet
-    DependsOn:
-         - "EventBridgeIAMRole"
     Properties:
       StackSetName: EventBridgeRegionRuleStackSet
       TemplateURL: "https://fss-fleet-artifacts-us-east-1.s3.amazonaws.com/eventbridge-rules.template.yaml"
@@ -116,7 +107,7 @@ Resources:
       Parameters: 
         - 
           ParameterKey: SourceRegionEventBusARN
-          ParameterValue: !Ref SourceRegionEventBusARN
+          ParameterValue: !Ref DeployScannerTo
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
           - Regions: !Ref RegionsToRoute
