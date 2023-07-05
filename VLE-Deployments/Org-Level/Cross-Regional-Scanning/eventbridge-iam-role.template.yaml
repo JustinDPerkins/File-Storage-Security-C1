@@ -1,9 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Create IAM Role for EventBridge to send events to Main Region EventBus
-Parameters:
-  SourceRegionEventBusARN:
-    Type: String
-    Description: ARN of the Event bus in a different account or region
 Resources:
   EventBridgeIAMRole:
       Type: AWS::IAM::Role
@@ -23,7 +19,10 @@ Resources:
               Statement:
                 - Effect: Allow
                   Action: ["events:PutEvents"]
-                  Resource: !Ref SourceRegionEventBusARN
+                  Resource: !Join [":", ["arn", "aws", "events", !Ref "AWS::Region", !Ref "AWS::AccountId", "event-bus/default"]]
+
 Outputs:
   EventBridgeIAMRoleARN:
       Value: !GetAtt EventBridgeIAMRole.Arn
+  SourceRegionEventBusARN:
+      Value: !Join [":", ["arn", "aws", "events", !Ref "AWS::Region", !Ref "AWS::AccountId", "event-bus/default"]]
