@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Create EventBriodge Rule Pattern to Send to Main Region EventBus
+Description: Create EventBridge Rule Pattern to Send to Main Region EventBus
 Parameters:
   SourceRegionEventBusARN:
     Type: String
@@ -15,7 +15,7 @@ Resources:
         detail-type:
           - 'Object Created'
       Targets:
-        - Arn: !Ref SourceRegionEventBusARN
+        - Arn: !Join [":", ["arn", "aws", "events", !Ref SourceRegionEventBusARN, !Ref "AWS::AccountId", "event-bus/default"]]
           Id: FSSEventBusTarget
           RoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/FSS-EventBridge-Role"
 
