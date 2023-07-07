@@ -1,4 +1,4 @@
-# Cloud One - File Storage Security Plugins
+# Cloud One - File Storage Security Plugins.
 
 This repo contains plugins to leverage with Trend Micro Cloud One - File Storage Security
 
