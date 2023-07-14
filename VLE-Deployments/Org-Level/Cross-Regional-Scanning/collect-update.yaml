@@ -1,0 +1,399 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Enables EventBridge for S3 and collects details to update the account FSS Stack with KMS Keys and eventually create and update the stack with Quarantine.
+
+Parameters:
+  CloudOneRegion:
+    Description: The region of the Trend Micro Cloud One services.
+    Type: String
+    Default: us-1
+  APIKey:
+    Description: Cloud One API Key
+    Type: String
+    NoEcho: true
+    Default: ''
+  ExternalID:
+    Description: "The External ID is for future use with updating Lambdas and also to address and prevent the 'confused deputy' problem."
+    Type: String
+  FSSBucketName:
+    ConstraintDescription: File Storage Security bucket name can include numbers, lowercase letters, and hyphens (-). It cannot start or end with a hyphen (-).
+    Default: file-storage-security
+    Description: ''
+    Type: String
+  FSSKeyPrefix:
+    ConstraintDescription: The File Storage Security key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).
+    Default: latest/
+    Description: ''
+    Type: String
+  ReportObjectKey:
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: |-
+      Enable this to report the object keys of the scanned objects to File Storage Security backend services.
+      File Storage Security can then display the object keys of the malicious objects in the response of events API.
+    Type: String
+  TrendMicroManagementAccount:
+    ConstraintDescription: AWS account ID.
+    Default: 415485722356
+    Description: This account will be given permission to modify the stacks for upgrades and troubleshooting purposes.
+    Type: String
+
+Resources:
+  QuarantineBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "quarantine-${AWS::AccountId}-fss"
+  
+  CloudOneApiKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: CloudOneAPIKey
+      Description: Trend Cloud One API Key
+      SecretString: !Sub '{"apikey":"${APIKey}"}'
+
+  CustomLambdaRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: CustomLambdaRole-FSS-VLE
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: LambdaExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "s3:*"
+                  - "lambda:*"
+                  - "cloudformation:*"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "kms:DescribeKey"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "sqs:*"
+                  - "sns:*"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref CloudOneApiKeySecret
+              - Effect: Allow
+                Action:
+                  - "iam:*"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                  - "logs:DescribeLogGroups"
+                Resource: "arn:aws:logs:*:*:*"
+
+  KMSCollection:
+    Type: "AWS::CloudFormation::CustomResource"
+    Properties:
+      ServiceToken: !GetAtt KMSCollectionLambda.Arn
+      RoleArn: !GetAtt CustomLambdaRole.Arn
+
+  KMSCollectionLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: KMSCollectionLambda
+      Handler: index.handler
+      Runtime: python3.8
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+
+          def list_encrypted_buckets(event, context):
+              s3_client = boto3.client('s3')
+
+              try:
+                  response = s3_client.list_buckets()
+
+                  encrypted_buckets = []
+                  for bucket in response['Buckets']:
+                      bucket_name = bucket['Name']
+                      bucket_encryption = s3_client.get_bucket_encryption(Bucket=bucket_name)
+
+                      if 'ServerSideEncryptionConfiguration' in bucket_encryption:
+                          rules = bucket_encryption['ServerSideEncryptionConfiguration']['Rules']
+                          for rule in rules:
+                              if 'ApplyServerSideEncryptionByDefault' in rule:
+                                  if rule['ApplyServerSideEncryptionByDefault']['SSEAlgorithm'] == 'aws:kms':
+                                      kms_key_arn = rule['ApplyServerSideEncryptionByDefault']['KMSMasterKeyID']
+                                      encrypted_buckets.append(kms_key_arn)
+                  print(encrypted_buckets)
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {'EncryptedBuckets': encrypted_buckets})
+              except Exception as e:
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+
+          def handler(event, context):
+              request_type = event['RequestType']
+              if request_type == 'Create' or request_type == 'Update':
+                  list_encrypted_buckets(event, context)
+              elif request_type == 'Delete':
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+
+      Timeout: 90
+      Role: !GetAtt CustomLambdaRole.Arn
+
+  EnableEventBridgeNotificationsCustomResource:
+    Type: 'Custom::EnableEventBridgeNotifications'
+    Properties:
+      ServiceToken: !GetAtt EnableEventBridgeNotificationsLambda.Arn
+      RoleArn: !GetAtt CustomLambdaRole.Arn
+
+  EnableEventBridgeNotificationsLambda:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: EnableEventBridgeNotificationsLambda
+      Handler: index.lambda_handler
+      Runtime: python3.8
+      Timeout: 300
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+
+          def enable_eventbridge_notifications(event, context):
+              s3_client = boto3.client('s3')
+              s3_resource = boto3.resource('s3')
+
+              # Retrieve all bucket names in the AWS account
+              bucket_names = [bucket.name for bucket in s3_resource.buckets.all()]
+
+              for bucket_name in bucket_names:
+                  notification_configuration = {
+                      'EventBridgeConfiguration': {}
+                  }
+
+                  try:
+                      s3_client.put_bucket_notification_configuration(
+                          Bucket=bucket_name,
+                          NotificationConfiguration=notification_configuration
+                      )
+                  except Exception as e:
+                      cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+                      return
+
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+        
+          def lambda_handler(event, context):
+              print('Received event:', event)
+              try:
+                  if event['RequestType'] == 'Create' or event['RequestType'] == 'Update':
+                      enable_eventbridge_notifications(event, context)
+                      return
+                  elif event['RequestType'] == 'Delete':
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                      return
+                  else:
+                      cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': 'Invalid request type'})
+              except Exception as e:
+                  print('Exception:', str(e))
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+
+      Role: !GetAtt CustomLambdaRole.Arn
+  
+  AddtoCloudOne:
+    Type: 'Custom::RegisterStack'
+    Properties:
+      ServiceToken: !GetAtt registerStackLambda.Arn
+      RoleArn: !GetAtt CustomLambdaRole.Arn
+  
+  registerStackLambda:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: RegisterStackLambda
+      Handler: index.lambda_handler
+      Runtime: python3.8
+      Timeout: 300
+      Environment:
+        Variables:
+          URL: https://filestorage.us-1.cloudone.trendmicro.com/api/stacks/
+          APIKEY: !Ref CloudOneApiKeySecret
+      Role: !GetAtt CustomLambdaRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import urllib3
+          import time
+          import boto3
+          import cfnresponse
+
+          http = urllib3.PoolManager()
+          url = os.environ['URL']
+          key = os.environ['APIKEY']
+          sm = boto3.client('secretsmanager')
+          cloud_one_api_key = sm.get_secret_value(SecretId=key)
+          api = json.loads(cloud_one_api_key["SecretString"])
+          api_key = api["apikey"]
+
+          def lambda_handler(event, context):
+              try:
+                if event['RequestType'] == 'Create' or event['RequestType'] == 'Update':
+                  stack_prefix = "StackSet-FSS-ScannerStackSet-"
+                  management_role_arn = ""
+                  cfn_client = boto3.client('cloudformation')
+
+                  # Describe stacks
+                  response = cfn_client.describe_stacks()
+                  stacks = response['Stacks']
+
+                  for stack in stacks:
+                      stack_name = stack['StackName']
+                      if stack_name.startswith(stack_prefix):
+                          for output in stack['Outputs']:
+                              if output['OutputKey'] == 'AccountScannerStackManagementRoleARN':
+                                  management_role_arn = output['OutputValue']
+                                  break
+
+                  payload = json.dumps({
+                      "type": "account-scanner",
+                      "provider": "aws",
+                      "details": {
+                          "managementRole": management_role_arn
+                      }
+                  })
+
+                  headers = {
+                      'Authorization': 'ApiKey ' + api_key,
+                      'Api-Version': 'v1',
+                      'Content-Type': 'application/json'
+                  }
+
+                  # Add stack to FSS Backend
+                  addStack = http.request('POST', url, body=payload, headers=headers)
+                  stackID = json.loads(addStack.data.decode('utf-8'))
+                  value = stackID['stackID']
+                  
+                  # Check stack status
+                  stack_status_call = url + value
+                  time.sleep(5)
+                  check = http.request('GET', stack_status_call, headers=headers)
+                  status = json.loads(check.data.decode('utf-8'))
+                  
+                  while status['status'] != 'ok':
+                      if status['status'] == 'creation-failed':
+                          cfnresponse.send(event, context, cfnresponse.FAILED, {"StackID": "Stack creation failed. The stack has been deployed already."})
+                          break
+                  
+                      time.sleep(3)
+                      check = http.request('GET', stack_status_call, headers=headers)
+                      status = json.loads(check.data.decode('utf-8'))
+                  name = status['name']
+                  data = {"StackName": name, "StackID": value}
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, data)
+                elif event['RequestType'] == 'Delete':
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+
+              except Exception as e:
+                  print(str(e))
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {"StackID": "Custom resource operation failed"})
+  
+  UpdateStackParametersforAccount:
+    Type: 'Custom::UpdateStackParams'
+    Properties:
+      ServiceToken: !GetAtt updateStackLambda.Arn
+      RoleArn: !GetAtt CustomLambdaRole.Arn
+      Capabilities:
+        - CAPABILITY_IAM
+  
+  updateStackLambda:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: UpdateStackLambda
+      Handler: index.handler
+      Runtime: python3.8
+      Timeout: 300
+      Environment:
+        Variables:
+          KMSKEYS: !Join [",", !GetAtt KMSCollection.EncryptedBuckets]
+          SCANNERSTACKARN: !GetAtt AddtoCloudOne.StackName
+          EXTERNALID: !Ref ExternalID
+          REGION: !Ref CloudOneRegion
+          FSSBUCKET: !Ref FSSBucketName
+          FSSKeyPrefix: !Ref FSSKeyPrefix
+          REPORTOBJKEY: !Ref ReportObjectKey
+          TrendMicroManagementAccount: !Ref TrendMicroManagementAccount
+          Quarantine: !Ref QuarantineBucket
+      Role: !GetAtt CustomLambdaRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import boto3
+          import cfnresponse
+          ### i need to add in the root input params to add back in here
+          def handler(event, context):
+              try:
+                  if event['RequestType'] == 'Create' or event['RequestType'] == 'Update':
+                      # Update the CloudFormation stack parameters using the existing template
+                      cf_client = boto3.client('cloudformation')
+                      stack_name = os.environ['SCANNERSTACKARN']
+                      template_body = cf_client.get_template(StackName=stack_name)['TemplateBody']
+                      response = cf_client.update_stack(
+                          StackName=stack_name,
+                          TemplateURL="https://file-storage-security.s3.amazonaws.com/latest/templates/FSS-Account-Scanner-Stack.template",
+                          Parameters=[
+                              {
+                                  'ParameterKey': 'KMSKeyARNsForBucketSSE',
+                                  'ParameterValue': os.environ['KMSKEYS']
+                              },
+                              {
+                                  'ParameterKey': 'ExternalID',
+                                  'ParameterValue': os.environ['EXTERNALID']
+                              },
+                              {
+                                  'ParameterKey': 'CloudOneRegion',
+                                  'ParameterValue': os.environ['REGION']
+                              },
+                              {
+                                  'ParameterKey': 'FSSBucketName',
+                                  'ParameterValue': os.environ['FSSBUCKET']
+                              },
+                              {
+                                  'ParameterKey': 'FSSKeyPrefix',
+                                  'ParameterValue': os.environ['FSSKeyPrefix']
+                              },
+                              {
+                                  'ParameterKey': 'TrendMicroManagementAccount',
+                                  'ParameterValue': os.environ['TrendMicroManagementAccount']
+                              },
+                              {
+                                  'ParameterKey': 'ReportObjectKey',
+                                  'ParameterValue': os.environ['REPORTOBJKEY']
+                              },
+                              {
+                                  'ParameterKey': 'QuarantineBucket',
+                                  'ParameterValue': os.environ['Quarantine']
+                              }
+                          ],
+                          Capabilities=['CAPABILITY_IAM']
+                      )
+                      # Wait for the stack update to complete
+                      cf_client.get_waiter('stack_update_complete').wait(StackName=stack_name)
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, "CustomResource completed update successfully")
+                  elif event['RequestType'] == 'Delete':
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as e:
+                  print(f"CustomResource Lambda Error: {e}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {}, "CustomResource stack update failed")
+  
+Outputs:
+  EncryptedBucketKeys:
+    Description: "KMS keys used for bucket encryption"
+    Value: !Join [",", !GetAtt KMSCollection.EncryptedBuckets]

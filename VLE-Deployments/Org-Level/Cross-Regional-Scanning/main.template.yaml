@@ -1,17 +1,61 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description:  Trend Micro File Storage Security Main Root Stack. AWS Org deployment to S3 Fleet for Cross-Region Scanning.
+Description:  Trend Micro File Storage Security Main Root Stack. AWS Org deployment to S3 Fleet for Cross-Region Scanning. Creates StackSet Series.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "File Storage Security Orchestration Parameters"
+        Parameters:
+          - DeployScannerTo
+          - RegionsToEnable
+          - OrgOUID
+          - APIKey
+      - Label:
+          default: "Warning: Do not modify the fields below. Modifications may cause your deployment to fail."
+        Parameters:
+          - FSSBucketName
+          - FSSKeyPrefix
+          - TrendMicroManagementAccount
+          - CloudOneRegion
+          - ExternalID
+    
+    ParameterLabels:
+      CloudOneRegion:
+        default: Trend Micro Cloud One region
+      APIKey:
+        default: Trend Micro Cloud One API Key 
+      ExternalID:
+        default: ExternalID
+      FSSBucketName:
+        default: Stack package location
+      FSSKeyPrefix:
+        default: Version
+      TrendMicroManagementAccount:
+        default: File Storage Security management account
+      DeployScannerTo:
+        Description: Specify the Main AWS Regions to deploy the File Storage Scanner in.[The Scanner will be deployed in this one region in every Account]
+      RegionsToEnable:
+        Description: Specify all AWS Regions to deploy EventBridge Rule in to route to Scanner Region.[Comma Delimited List - No Spaces between].
+      OrgOUID:
+        Description: Specify AWS Organizational Unit IDs within AWS Organization whose accounts have the target instances (ou-name) for distribution. (Account IDs are only allowed when updating).[Comma Delimited List - No Spaces between].
 
 Parameters:
   DeployScannerTo:
     Description: Specify the Main AWS Regions to deploy the File Storage Scanner in.[The Scanner will be deployed in this one region in every Account]
     Type: String
     Default: 'us-east-1'
-  RegionsToRoute:
+  APIKey:
+    Description: Cloud One API Key
+    Type: String
+    NoEcho: true
+    Default: ''
+  RegionsToEnable:
     Description: Specify all AWS Regions to deploy EventBridge Rule in to route to Scanner Region.[Comma Delimited List - No Spaces between].
     Type: CommaDelimitedList
     Default: 'us-east-2'
   OrgOUID:
-    Description: Specify AWS Organizational Unit IDs within AWS Organization whose accounts have the target instances (ou-name) for distribution. (Account IDs are only allowed when updating)
+    Description: Specify AWS Organizational Unit IDs within AWS Organization whose accounts have the target instances (ou-name) for distribution. (Account IDs are only allowed when updating).[Comma Delimited List - No Spaces between].
     Type: CommaDelimitedList
     Default: ''
   CloudOneRegion:
@@ -21,21 +65,34 @@ Parameters:
   ExternalID:
     Description: "The External ID is for future use with updating Lambdas and also to address and prevent the 'confused deputy' problem."
     Type: String
-    Default: 365081194606
   FSSBucketName:
     ConstraintDescription:
       File Storage Security bucket name can include numbers, lowercase
-      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      letters, and hyphens (-). It cannot start or end with a hyphen
       (-).
-    Default: fss-fleet-artifacts
-    Description: ""
+    Default: file-storage-security
+    Description: ''
     Type: String
   FSSKeyPrefix:
     ConstraintDescription:
-      File Storage Security key prefix can include numbers, lowercase letters,
+      The File Storage Security key prefix can include numbers, lowercase letters,
       uppercase letters, hyphens (-), and forward slash (/).
     Default: latest/
-    Description: ""
+    Description: ''
+    Type: String
+  ReportObjectKey:
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: |-
+      Enable this to report the object keys of the scanned objects to File Storage Security backend services.
+      File Storage Security can then display the object keys of the malicious objects in the response of events API.
+    Type: String
+  TrendMicroManagementAccount:
+    ConstraintDescription: AWS account ID.
+    Default: 415485722356
+    Description: This account will be given permission to modify the stacks for upgrades and troubleshooting purposes.
     Type: String
 
 Resources:
@@ -60,11 +117,9 @@ Resources:
 
   ScannerStackSet:
     Type: AWS::CloudFormation::StackSet
-    DependsOn:
-         - "EventBridgeIAMRole"
     Properties:
       StackSetName: FSS-ScannerStackSet
-      TemplateURL: "https://fss-fleet-artifacts-us-east-1.s3.amazonaws.com/latest/templates/FSS-Mass-Deployment-Scanner-Stack.template"
+      TemplateURL: "https://file-storage-security.s3.amazonaws.com/latest/templates/FSS-Account-Scanner-Stack.template"
       AutoDeployment:
         Enabled: true
         RetainStacksOnAccountRemoval: true
@@ -85,6 +140,12 @@ Resources:
         - 
           ParameterKey: FSSKeyPrefix
           ParameterValue: !Ref FSSKeyPrefix
+        -
+          ParameterKey: ReportObjectKey
+          ParameterValue: !Ref ReportObjectKey
+        - 
+          ParameterKey: TrendMicroManagementAccount
+          ParameterValue: !Ref TrendMicroManagementAccount
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
           - Regions: 
@@ -94,6 +155,8 @@ Resources:
 
   EventBridgeRulesStackSet:
     Type: AWS::CloudFormation::StackSet
+    DependsOn:
+         - "EventBridgeIAMRole"
     Properties:
       StackSetName: EventBridgeRegionRuleStackSet
       TemplateURL: "https://fss-fleet-artifacts-us-east-1.s3.amazonaws.com/eventbridge-rules.template.yaml"
@@ -110,17 +173,17 @@ Resources:
           ParameterValue: !Ref DeployScannerTo
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
-          - Regions: !Ref RegionsToRoute
+          - Regions: !Ref RegionsToEnable
             DeploymentTargets:
               OrganizationalUnitIds: !Ref OrgOUID
   
-  CustomEnableEventBridgeonS3:
+  CustomEnableResource:
     Type: AWS::CloudFormation::StackSet
     DependsOn:
          - "ScannerStackSet"
     Properties:
-      StackSetName: EnableS3EventBridgeStackSet
-      TemplateURL: "https://fss-fleet-artifacts-us-east-1.s3.amazonaws.com/enable-s3-notifications.template.yaml"
+      StackSetName: UpdateScannerParams
+      TemplateURL: "https://fss-fleet-artifacts-us-east-1.s3.amazonaws.com/collect-update.yaml"
       AutoDeployment:
         Enabled: true
         RetainStacksOnAccountRemoval: true
@@ -129,6 +192,28 @@ Resources:
           - CAPABILITY_IAM
           - CAPABILITY_NAMED_IAM
       PermissionModel: SERVICE_MANAGED
+      Parameters: 
+        - 
+          ParameterKey: CloudOneRegion
+          ParameterValue: !Ref CloudOneRegion
+        - 
+          ParameterKey: ExternalID
+          ParameterValue: !Ref ExternalID
+        - 
+          ParameterKey: FSSBucketName
+          ParameterValue: !Ref FSSBucketName
+        - 
+          ParameterKey: FSSKeyPrefix
+          ParameterValue: !Ref FSSKeyPrefix
+        -
+          ParameterKey: ReportObjectKey
+          ParameterValue: !Ref ReportObjectKey
+        - 
+          ParameterKey: TrendMicroManagementAccount
+          ParameterValue: !Ref TrendMicroManagementAccount
+        - 
+          ParameterKey: APIKey
+          ParameterValue: !Ref APIKey
       StackInstancesGroup:
           - Regions: 
             - !Ref DeployScannerTo

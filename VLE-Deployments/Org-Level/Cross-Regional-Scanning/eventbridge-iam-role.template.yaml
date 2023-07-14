@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Create IAM Role for EventBridge to send events to Main Region EventBus
+Description: FSS IAM Role for EventBridge to send events to Main Scanner Region EventBus. If deleted, permissions to send events to target will be gone.
 Resources:
   EventBridgeIAMRole:
       Type: AWS::IAM::Role

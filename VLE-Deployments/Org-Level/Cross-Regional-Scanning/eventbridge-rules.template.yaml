@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Create EventBridge Rule Pattern to Send to Main Region EventBus
+Description: FSS EventBridge Rule Pattern to Send to Main Scanner Region EventBus. If you delete this stack eventbridge wont send events for FSS to scan.
 Parameters:
   SourceRegionEventBusARN:
     Type: String
