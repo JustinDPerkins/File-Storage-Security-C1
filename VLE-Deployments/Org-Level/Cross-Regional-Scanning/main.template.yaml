@@ -100,7 +100,7 @@ Resources:
     Type: AWS::CloudFormation::StackSet
     Properties:
       StackSetName: FSS-EventBridgeRole
-      TemplateURL: "https://fss-fleet-artifacts-us-east-1.s3.amazonaws.com/eventbridge-iam-role.template.yaml"
+      TemplateURL: "https://immersionday-workshops-trendmicro.s3.amazonaws.com/fss/vle-deployment/cross-region-scanner-orchestration/eventbridge-iam-role.template.yaml"
       AutoDeployment:
         Enabled: true
         RetainStacksOnAccountRemoval: true
@@ -159,7 +159,7 @@ Resources:
          - "EventBridgeIAMRole"
     Properties:
       StackSetName: EventBridgeRegionRuleStackSet
-      TemplateURL: "https://fss-fleet-artifacts-us-east-1.s3.amazonaws.com/eventbridge-rules.template.yaml"
+      TemplateURL: "https://immersionday-workshops-trendmicro.s3.amazonaws.com/fss/vle-deployment/cross-region-scanner-orchestration/eventbridge-rules.template.yaml"
       AutoDeployment:
         Enabled: true
         RetainStacksOnAccountRemoval: true
@@ -183,7 +183,7 @@ Resources:
          - "ScannerStackSet"
     Properties:
       StackSetName: UpdateScannerParams
-      TemplateURL: "https://fss-fleet-artifacts-us-east-1.s3.amazonaws.com/collect-update.yaml"
+      TemplateURL: "https://immersionday-workshops-trendmicro.s3.amazonaws.com/fss/vle-deployment/cross-region-scanner-orchestration/collect-update.yaml"
       AutoDeployment:
         Enabled: true
         RetainStacksOnAccountRemoval: true

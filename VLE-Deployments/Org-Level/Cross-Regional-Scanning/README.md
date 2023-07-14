@@ -28,7 +28,7 @@ This repo contains templates to deploy Trend Cloud One File Storage Security thr
 You will need:
    - AWS Account
    - Valid Cloud One Account
-   - Full Access Cloud One API Key.
+   - [Full Access Cloud One API Key](https://cloudone.trendmicro.com/docs/identity-and-account-management/c1-api-key/)
 
 ---
 
@@ -37,7 +37,9 @@ You will need:
 - DeployScannerTo: Home Region for Scanner to be deployed in
 - RegionsToEnable: Alternative region to where the Scanner was deployed. This will allow for events outside the scanner region to be routed to the Scanner Stack.
 - OrgOUID: Comma Separated list of Organization Unit ID values to target the accounts in for deployment.
-- APIKey: Cloud One FA API Key Value.
+- APIKey: Cloud One API Key Value.
+
+[![Launch Stack](https://cdn.rawgit.com/buildkite/cloudformation-launch-stack-button-svg/master/launch-stack.svg)](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=VLE-FSS-Root-Stack&templateURL=https://immersionday-workshops-trendmicro.s3.amazonaws.com/fss/vle-deployment/cross-region-scanner-orchestration/main.template.yaml)
 
 --- 
 
