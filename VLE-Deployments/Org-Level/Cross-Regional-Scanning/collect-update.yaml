@@ -42,6 +42,8 @@ Parameters:
 Resources:
   QuarantineBucket:
     Type: AWS::S3::Bucket
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
     Properties:
       BucketName: !Sub "quarantine-${AWS::AccountId}-fss"
   
@@ -77,6 +79,10 @@ Resources:
               - Effect: Allow
                 Action:
                   - "kms:DescribeKey"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "states:*"
                 Resource: "*"
               - Effect: Allow
                 Action:
@@ -134,7 +140,7 @@ Resources:
                                   if rule['ApplyServerSideEncryptionByDefault']['SSEAlgorithm'] == 'aws:kms':
                                       kms_key_arn = rule['ApplyServerSideEncryptionByDefault']['KMSMasterKeyID']
                                       encrypted_buckets.append(kms_key_arn)
-                  print(encrypted_buckets)
+
                   cfnresponse.send(event, context, cfnresponse.SUCCESS, {'EncryptedBuckets': encrypted_buckets})
               except Exception as e:
                   cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
@@ -161,10 +167,14 @@ Resources:
       FunctionName: EnableEventBridgeNotificationsLambda
       Handler: index.lambda_handler
       Runtime: python3.8
+      Environment:
+        Variables:
+          EXCLUDE: !Ref QuarantineBucket
       Timeout: 300
       Code:
         ZipFile: |
           import boto3
+          import os
           import cfnresponse
 
           def enable_eventbridge_notifications(event, context):
@@ -173,6 +183,10 @@ Resources:
 
               # Retrieve all bucket names in the AWS account
               bucket_names = [bucket.name for bucket in s3_resource.buckets.all()]
+
+              # Exclude the specific bucket
+              excluded_bucket_name = os.environ['EXCLUDE']
+              bucket_names = [bucket for bucket in bucket_names if bucket != excluded_bucket_name]
 
               for bucket_name in bucket_names:
                   notification_configuration = {
@@ -189,7 +203,7 @@ Resources:
                       return
 
               cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
-        
+
           def lambda_handler(event, context):
               print('Received event:', event)
               try:
@@ -229,81 +243,136 @@ Resources:
         ZipFile: |
           import json
           import os
-          import urllib3
           import time
           import boto3
+          import urllib3
           import cfnresponse
 
           http = urllib3.PoolManager()
-          url = os.environ['URL']
-          key = os.environ['APIKEY']
-          sm = boto3.client('secretsmanager')
-          cloud_one_api_key = sm.get_secret_value(SecretId=key)
-          api = json.loads(cloud_one_api_key["SecretString"])
-          api_key = api["apikey"]
+
+          def get_physical_id(stack_name, logical_id, cfn_client):
+              try:
+                  response = cfn_client.describe_stack_resources(StackName=stack_name)
+                  for resource in response['StackResources']:
+                      if resource['LogicalResourceId'] == logical_id:
+                          return resource['PhysicalResourceId']
+                  return None
+              except Exception as e:
+                  print(f"Error getting Physical ID for {logical_id}: {str(e)}")
+                  return None 
 
           def lambda_handler(event, context):
+              print(event)
               try:
-                if event['RequestType'] == 'Create' or event['RequestType'] == 'Update':
-                  stack_prefix = "StackSet-FSS-ScannerStackSet-"
-                  management_role_arn = ""
-                  cfn_client = boto3.client('cloudformation')
+                  request_type = event['RequestType']
+                  if request_type == 'Create' or request_type == 'Update':
+                      url = os.environ['URL']
+                      key = os.environ['APIKEY']
+                      sm = boto3.client('secretsmanager')
+                      cloud_one_api_key = sm.get_secret_value(SecretId=key)
+                      api = json.loads(cloud_one_api_key["SecretString"])
+                      api_key = api["apikey"]
 
-                  # Describe stacks
-                  response = cfn_client.describe_stacks()
-                  stacks = response['Stacks']
+                      stack_prefix = "StackSet-FSS-ScannerStackSet-"
+                      cfn_client = boto3.client('cloudformation')
 
-                  for stack in stacks:
-                      stack_name = stack['StackName']
-                      if stack_name.startswith(stack_prefix):
-                          for output in stack['Outputs']:
-                              if output['OutputKey'] == 'AccountScannerStackManagementRoleARN':
-                                  management_role_arn = output['OutputValue']
+                      management_role_arn = None
+                      scanner_execution_role_arn = None
+                      scanner_lambda_arn = None
+
+                      # Describe stacks
+                      response = cfn_client.describe_stacks()
+                      stacks = response['Stacks']
+
+                      for stack in stacks:
+                          stack_name = stack['StackName']
+                          if stack_name.startswith(stack_prefix):
+                              for output in stack['Outputs']:
+                                  if output['OutputKey'] == 'AccountScannerStackManagementRoleARN':
+                                      management_role_arn = output['OutputValue']
+                                  elif output['OutputKey'] == 'ScannerExecutionRoleARN':
+                                      scanner_execution_role_arn = output['OutputValue']
+
+                              # Break the loop if both output values are found
+                              if management_role_arn and scanner_execution_role_arn:
                                   break
 
-                  payload = json.dumps({
-                      "type": "account-scanner",
-                      "provider": "aws",
-                      "details": {
-                          "managementRole": management_role_arn
+                      if not (management_role_arn and scanner_execution_role_arn):
+                          cfnresponse.send(event, context, cfnresponse.FAILED, {"Error": "Failed to get required outputs from stacks."})
+                          return
+
+                      # Fetch Physical IDs of resources
+                      scanner_lambda_physical_id = get_physical_id(stack_name, 'ScannerLambda', cfn_client)
+                      scan_result_topic_sub_physical_id = get_physical_id(stack_name, 'ScanResultTopic', cfn_client)
+                      if not scanner_lambda_physical_id or not scan_result_topic_sub_physical_id:
+                          cfnresponse.send(event, context, cfnresponse.FAILED, {"Error": "Failed to get Physical IDs for resources."})
+                          return
+
+                      # Get AWS region and account ID dynamically from context
+                      region = context.invoked_function_arn.split(":")[3]
+                      account_id = context.invoked_function_arn.split(":")[4]
+
+                      # Convert the physical IDs to Lambda ARN format directly within the lambda_handler function
+                      scanner_lambda_arn = f"arn:aws:lambda:{region}:{account_id}:function:{scanner_lambda_physical_id}"
+                      scan_result_topic_arn = f"{scan_result_topic_sub_physical_id}"
+
+                      payload = json.dumps({
+                          "type": "account-scanner",
+                          "provider": "aws",
+                          "details": {
+                              "managementRole": management_role_arn
+                          }
+                      })
+
+                      headers = {
+                          'Authorization': 'ApiKey ' + api_key,
+                          'Api-Version': 'v1',
+                          'Content-Type': 'application/json'
                       }
-                  })
 
-                  headers = {
-                      'Authorization': 'ApiKey ' + api_key,
-                      'Api-Version': 'v1',
-                      'Content-Type': 'application/json'
-                  }
+                      # Add stack to FSS Backend
+                      addStack = http.request('POST', url, body=payload, headers=headers)
+                      stackID = json.loads(addStack.data.decode('utf-8'))
+                      value = stackID['stackID']
 
-                  # Add stack to FSS Backend
-                  addStack = http.request('POST', url, body=payload, headers=headers)
-                  stackID = json.loads(addStack.data.decode('utf-8'))
-                  value = stackID['stackID']
-                  
-                  # Check stack status
-                  stack_status_call = url + value
-                  time.sleep(5)
-                  check = http.request('GET', stack_status_call, headers=headers)
-                  status = json.loads(check.data.decode('utf-8'))
-                  
-                  while status['status'] != 'ok':
-                      if status['status'] == 'creation-failed':
-                          cfnresponse.send(event, context, cfnresponse.FAILED, {"StackID": "Stack creation failed. The stack has been deployed already."})
-                          break
-                  
-                      time.sleep(3)
-                      check = http.request('GET', stack_status_call, headers=headers)
-                      status = json.loads(check.data.decode('utf-8'))
-                  name = status['name']
-                  data = {"StackName": name, "StackID": value}
-                  cfnresponse.send(event, context, cfnresponse.SUCCESS, data)
-                elif event['RequestType'] == 'Delete':
+                      # Check stack status with a timeout of 5 minutes
+                      stack_status_call = url + value
+                      start_time = time.time()
+                      timeout = 300  # 5 minutes
+                      while True:
+                          if time.time() - start_time > timeout:
+                              cfnresponse.send(event, context, cfnresponse.FAILED, {"Error": "Timeout waiting for stack status update."})
+                              return
+
+                          time.sleep(3)
+                          check = http.request('GET', stack_status_call, headers=headers)
+                          status = json.loads(check.data.decode('utf-8'))
+
+                          if status['status'] == 'ok':
+                              break
+                          elif status['status'] == 'creation-failed':
+                              cfnresponse.send(event, context, cfnresponse.FAILED, {"StackID": "Stack creation failed. The stack has been deployed already."})
+                              return
+
+                      data = {
+                          "StackName": status['name'],
+                          "StackID": value,
+                          "ScannerARN": scanner_lambda_arn,
+                          "SNSTopicARN": scan_result_topic_arn,
+                          "ScanRoleARN": scanner_execution_role_arn
+                      }
+
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, data)
+
+                  elif request_type == 'Delete':
                       cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
 
               except Exception as e:
                   print(str(e))
-                  cfnresponse.send(event, context, cfnresponse.FAILED, {"StackID": "Custom resource operation failed"})
-  
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {"Error": "Custom resource operation failed"})
+
+
+
   UpdateStackParametersforAccount:
     Type: 'Custom::UpdateStackParams'
     Properties:
@@ -337,7 +406,7 @@ Resources:
           import os
           import boto3
           import cfnresponse
-          ### i need to add in the root input params to add back in here
+          
           def handler(event, context):
               try:
                   if event['RequestType'] == 'Create' or event['RequestType'] == 'Update':
@@ -392,8 +461,148 @@ Resources:
               except Exception as e:
                   print(f"CustomResource Lambda Error: {e}")
                   cfnresponse.send(event, context, cfnresponse.FAILED, {}, "CustomResource stack update failed")
-  
+  FullScanForAccount:
+    Type: 'Custom::ScanSchedulePlugin'
+    Properties:
+      ServiceToken: !GetAtt DeployPluginLambda.Arn
+      RoleArn: !GetAtt CustomLambdaRole.Arn
+      Capabilities:
+        - CAPABILITY_IAM
+        - CAPABILITY_NAMED_IAM
+        - CAPABILITY_AUTO_EXPAND
+
+  DeployPluginLambda:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: PluginStackLambda
+      Handler: index.handler
+      Runtime: python3.8
+      Timeout: 300
+      Environment:
+        Variables:
+          ScanRoleArn: !GetAtt AddtoCloudOne.ScanRoleARN
+          ScanResultTopicArn: !GetAtt AddtoCloudOne.SNSTopicARN
+          ScannerLambdaArn: !GetAtt AddtoCloudOne.ScannerARN
+      Role: !GetAtt CustomLambdaRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import boto3
+          import cfnresponse
+
+          scan_result_topic_arn = os.environ['ScanResultTopicArn']
+          scanner_lambda_arn = os.environ['ScannerLambdaArn']
+          scanner_role_arn = os.environ['ScanRoleArn']
+
+          # IAM policy to be attached to the existing role
+          attach_policy = {
+              "Version": "2012-10-17",
+              "Statement": [
+                  {
+                      "Sid": "VisualEditor0",
+                      "Effect": "Allow",
+                      "Action": [
+                          "sqs:ReceiveMessage",
+                          "sqs:DeleteMessage",
+                          "sqs:GetQueueAttributes",
+                          "sqs:GetQueueUrl",
+                          "sqs:ListQueueTags",
+                          "sqs:ListDeadLetterSourceQueues",
+                          "sqs:ListMessageMoveTasks",
+                          "sqs:ListQueues"
+                      ],
+                      "Resource": "*"
+                  }
+              ]
+          }
+
+          def create_or_update_stack():
+              try:
+                  # Attach the additional policy to the existing IAM role
+                  iam_client = boto3.client('iam')
+                  response = iam_client.put_role_policy(
+                      RoleName=scanner_role_arn.split('/')[-1],
+                      PolicyName='FullScanFSSPolicy',
+                      PolicyDocument=json.dumps(attach_policy)
+                  )
+
+                  cfn_client = boto3.client('cloudformation')
+                  response = cfn_client.create_stack(
+                      StackName='FullScanPluginStack',
+                      TemplateURL='https://immersionday-workshops-trendmicro.s3.amazonaws.com/fss/vle-deployment/cross-region-scanner-orchestration/main.fullschedule.yaml',
+                      Parameters=[
+                          {
+                              'ParameterKey': 'ScanResultTopicArn',
+                              'ParameterValue': scan_result_topic_arn
+                          },
+                          {
+                              'ParameterKey': 'ScannerLambdaArn',
+                              'ParameterValue': scanner_lambda_arn
+                          }
+                      ],
+                      TimeoutInMinutes=30,
+                      Capabilities=[
+                          'CAPABILITY_IAM',
+                          'CAPABILITY_NAMED_IAM',
+                          'CAPABILITY_AUTO_EXPAND'
+                      ]
+                  )
+
+                  return {
+                      'Status': 'SUCCESS',
+                      'StackId': response['StackId']
+                  }
+              except Exception as e:
+                  print(str(e))
+                  return {
+                      'Status': 'FAILED',
+                      'Error': str(e)
+                  }
+
+          def delete_policy():
+              try:
+                  # Create an IAM client
+                  iam_client = boto3.client('iam')
+                  
+                  # Detach the additional policy from the existing IAM role during stack deletion
+                  response = iam_client.delete_role_policy(
+                      RoleName=scanner_role_arn.split('/')[-1],
+                      PolicyName='FullScanFSSPolicy'
+                  )
+                  
+                  cloudformation_client = boto3.client('cloudformation')
+                  stack_name='FullScanPluginStack'
+                  cloudformation_client.delete_stack(StackName=stack_name)
+                  
+                  return {
+                      'Status': 'SUCCESS'
+                  }
+              except Exception as e:
+                  print(str(e))
+                  return {
+                      'Status': 'FAILED',
+                      'Error': str(e)
+                  }
+
+          def handler(event, context):
+              request_type = event['RequestType']
+
+              if request_type == 'Create' or request_type == 'Update':
+                  response = create_or_update_stack()
+              elif request_type == 'Delete':
+                  response = delete_policy()
+              else:
+                  response = {
+                      'Status': 'FAILED',
+                      'Error': f'Invalid request type: {request_type}'
+                  }
+
+              cfnresponse.send(event, context, response['Status'], response)
+
 Outputs:
   EncryptedBucketKeys:
     Description: "KMS keys used for bucket encryption"
     Value: !Join [",", !GetAtt KMSCollection.EncryptedBuckets]
+
+# I need to trigger the ListBucketsStepFunction
