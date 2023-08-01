@@ -218,4 +218,4 @@ Resources:
           - Regions: 
             - !Ref DeployScannerTo
             DeploymentTargets:
-              OrganizationalUnitIds: !Ref OrgOUID
+              OrganizationalUnitIds: !Ref OrgOUID 
