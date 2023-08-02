@@ -1,0 +1,426 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Enables EventBridge for S3 and collects details to update the account FSS Stack with KMS Keys and eventually create and update the stack with Quarantine.
+
+Parameters:
+  CloudOneRegion:
+    Description: The region of the Trend Micro Cloud One services.
+    Type: String
+    Default: us-1
+  APIKey:
+    Description: Cloud One API Key
+    Type: String
+    NoEcho: true
+    Default: ''
+  ExternalID:
+    Description: "The External ID is for future use with updating Lambdas and also to address and prevent the 'confused deputy' problem."
+    Type: String
+  QuarantineBucket:
+    Description: "S3 Bucket resource to Quarantine object in."
+    Type: String
+  ScannerStackName:
+    Description: "Stack Name for Trend FSS Scanner Stack"
+    Type: String
+Resources:
+  CloudOneApiKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: CloudOneAPIKey
+      Description: Trend Cloud One API Key
+      SecretString: !Sub '{"apikey":"${APIKey}"}'
+  CustomLambdaRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: CustomLambdaRole-FSS-VLE
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: LambdaExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "s3:*"
+                  - "lambda:*"
+                  - "cloudformation:*"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "kms:DescribeKey"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "states:*"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "sqs:*"
+                  - "sns:*"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref CloudOneApiKeySecret
+              - Effect: Allow
+                Action:
+                  - "iam:*"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                  - "logs:DescribeLogGroups"
+                Resource: "arn:aws:logs:*:*:*"
+
+  KMSCollection:
+    Type: "AWS::CloudFormation::CustomResource"
+    Properties:
+      ServiceToken: !GetAtt KMSCollectionLambda.Arn
+      RoleArn: !GetAtt CustomLambdaRole.Arn
+
+  KMSCollectionLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: KMSCollectionLambda
+      Handler: index.handler
+      Runtime: python3.8
+      Timeout: 900
+      Role: !GetAtt CustomLambdaRole.Arn
+      Environment:
+        Variables:
+          EXCLUDE: !Ref QuarantineBucket
+      Code:
+        ZipFile: |
+          import boto3
+          import os
+          import cfnresponse
+
+          def handler(event, context):
+              s3_client = boto3.client('s3')
+              kms_client = boto3.client('kms')
+              eventbridge_client = boto3.client('events')
+              kms_key_arns = []
+
+              try:
+                  # List all S3 buckets
+                  response = s3_client.list_buckets()
+              except Exception as e:
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {"Message": "Error listing S3 buckets: {}".format(str(e))})
+                  return
+
+              # Check for KMS encryption and collect KMS Key ARNs
+              for bucket in response['Buckets']:
+                  bucket_name = bucket['Name']
+
+                  try:
+                      bucket_encryption = s3_client.get_bucket_encryption(Bucket=bucket_name)
+                  except s3_client.exceptions.NoSuchBucket:
+                      # Bucket does not exist or access denied
+                      continue
+                  except Exception as e:
+                      cfnresponse.send(event, context, cfnresponse.FAILED, {"Message": "Error getting encryption status for bucket {}: {}".format(bucket_name, str(e))})
+                      return
+
+                  if 'ServerSideEncryptionConfiguration' in bucket_encryption:
+                      for rule in bucket_encryption['ServerSideEncryptionConfiguration']['Rules']:
+                          if rule['ApplyServerSideEncryptionByDefault']['SSEAlgorithm'] == 'aws:kms':
+                              kms_key_arns.append(rule['ApplyServerSideEncryptionByDefault']['KMSMasterKeyID'])
+
+                  # Enable EventBridge notification for the bucket if not already enabled (except for the "quey" bucket)
+                  if bucket_name != os.environ['EXCLUDE']:
+                      notification_configuration = {
+                          'EventBridgeConfiguration': {}
+                      }
+                      try:
+                          s3_client.put_bucket_notification_configuration(
+                              Bucket=bucket_name,
+                              NotificationConfiguration=notification_configuration
+                          )
+                      except Exception as e:
+                          cfnresponse.send(event, context, cfnresponse.FAILED, {"Message": "Error enabling EventBridge notification for bucket {}: {}".format(bucket_name, str(e))})
+                          return
+
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, {"EncryptedBuckets": kms_key_arns})
+
+
+  AddtoCloudOne:
+    Type: 'Custom::RegisterStack'
+    Properties:
+      ServiceToken: !GetAtt registerStackLambda.Arn
+      RoleArn: !GetAtt CustomLambdaRole.Arn
+  
+  registerStackLambda:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: RegisterStackLambda
+      Handler: index.lambda_handler
+      Runtime: python3.8
+      Timeout: 300
+      Environment:
+        Variables:
+          URL: https://filestorage.us-1.cloudone.trendmicro.com/api/stacks/
+          APIKEY: !Ref CloudOneApiKeySecret
+          SCANNER: !Ref ScannerStackName
+      Role: !GetAtt CustomLambdaRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import time
+          import boto3
+          import urllib3
+          import cfnresponse
+
+          http = urllib3.PoolManager()
+
+          def get_physical_id(stack_name, logical_id, cfn_client):
+              try:
+                  response = cfn_client.describe_stack_resources(StackName=stack_name)
+                  for resource in response['StackResources']:
+                      if resource['LogicalResourceId'] == logical_id:
+                          return resource['PhysicalResourceId']
+                  return None
+              except Exception as e:
+                  print(f"Error getting Physical ID for {logical_id}: {str(e)}")
+                  return None 
+
+          def lambda_handler(event, context):
+              print(event)
+              try:
+                  request_type = event['RequestType']
+                  if request_type == 'Create' or request_type == 'Update':
+                      url = os.environ['URL']
+                      key = os.environ['APIKEY']
+                      sm = boto3.client('secretsmanager')
+                      cloud_one_api_key = sm.get_secret_value(SecretId=key)
+                      api = json.loads(cloud_one_api_key["SecretString"])
+                      api_key = api["apikey"]
+                      stack_arn = os.environ['SCANNER']
+                      cfn_client = boto3.client('cloudformation')
+
+                      management_role_arn = None
+                      scanner_execution_role_arn = None
+                      scanner_lambda_arn = None
+
+
+                      # Extract the stack name from the ARN
+                      stack_name = stack_arn.split('/')[1]
+
+                      # Describe stack outputs
+                      response = cfn_client.describe_stacks(StackName=stack_name)
+                      stack = response['Stacks'][0]  # Assuming there's only one stack with the given name
+                      stack_outputs = stack.get('Outputs', [])
+
+                      for output in stack_outputs:
+                          output_key = output.get('OutputKey')
+                          if output_key == 'AccountScannerStackManagementRoleARN':
+                              management_role_arn = output.get('OutputValue')
+                          elif output_key == 'ScannerExecutionRoleARN':
+                              scanner_execution_role_arn = output.get('OutputValue')
+
+                          # Break the loop if both output values are found
+                          if management_role_arn and scanner_execution_role_arn:
+                              break
+
+                      if not (management_role_arn and scanner_execution_role_arn):
+                          cfnresponse.send(event, context, cfnresponse.FAILED, {"Error": "Failed to get required outputs from the stack."})
+                          return
+
+                      # Fetch Physical IDs of resources
+                      scanner_lambda_physical_id = get_physical_id(stack_name, 'ScannerLambda', cfn_client)
+                      scan_result_topic_sub_physical_id = get_physical_id(stack_name, 'ScanResultTopic', cfn_client)
+                      if not scanner_lambda_physical_id or not scan_result_topic_sub_physical_id:
+                          cfnresponse.send(event, context, cfnresponse.FAILED, {"Error": "Failed to get Physical IDs for resources."})
+                          return
+
+                      # Get AWS region and account ID dynamically from context
+                      region = context.invoked_function_arn.split(":")[3]
+                      account_id = context.invoked_function_arn.split(":")[4]
+
+                      # Convert the physical IDs to Lambda ARN format directly within the lambda_handler function
+                      scanner_lambda_arn = f"arn:aws:lambda:{region}:{account_id}:function:{scanner_lambda_physical_id}"
+                      scan_result_topic_arn = f"{scan_result_topic_sub_physical_id}"
+
+                      payload = json.dumps({
+                          "type": "account-scanner",
+                          "provider": "aws",
+                          "details": {
+                              "managementRole": management_role_arn
+                          }
+                      })
+
+                      headers = {
+                          'Authorization': 'ApiKey ' + api_key,
+                          'Api-Version': 'v1',
+                          'Content-Type': 'application/json'
+                      }
+
+                      # Add stack to FSS Backend
+                      addStack = http.request('POST', url, body=payload, headers=headers)
+                      stackID = json.loads(addStack.data.decode('utf-8'))
+                      value = stackID['stackID']
+
+                      # Check stack status with a timeout of 5 minutes
+                      stack_status_call = url + value
+                      start_time = time.time()
+                      timeout = 300  # 5 minutes
+                      while True:
+                          if time.time() - start_time > timeout:
+                              cfnresponse.send(event, context, cfnresponse.FAILED, {"Error": "Timeout waiting for stack status update."})
+                              return
+
+                          time.sleep(3)
+                          check = http.request('GET', stack_status_call, headers=headers)
+                          status = json.loads(check.data.decode('utf-8'))
+
+                          if status['status'] == 'ok':
+                              break
+                          elif status['status'] == 'creation-failed':
+                              cfnresponse.send(event, context, cfnresponse.FAILED, {"StackID": "Stack creation failed. The stack has been deployed already."})
+                              return
+
+                      data = {
+                          "StackName": status['name'],
+                          "StackID": value,
+                          "ScannerARN": scanner_lambda_arn,
+                          "SNSTopicARN": scan_result_topic_arn,
+                          "ScanRoleARN": scanner_execution_role_arn
+                      }
+
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, data)
+
+                  elif request_type == 'Delete':
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+
+              except Exception as e:
+                  print(str(e))
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {"Error": "Custom resource operation failed"})
+
+  UpdateStackParametersforAccount:
+    Type: 'Custom::UpdateStackParams'
+    Properties:
+      ServiceToken: !GetAtt updateStackLambda.Arn
+      RoleArn: !GetAtt CustomLambdaRole.Arn
+      Capabilities:
+        - CAPABILITY_IAM
+  
+  updateStackLambda:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: UpdateStackLambda
+      Handler: index.handler
+      Runtime: python3.8
+      Timeout: 300
+      Environment:
+        Variables:
+          KMSKEYS: !Join [",", !GetAtt KMSCollection.EncryptedBuckets]
+          SCANNERSTACKARN: !GetAtt AddtoCloudOne.StackName
+          ScanRoleArn: !GetAtt AddtoCloudOne.ScanRoleARN
+          EXTERNALID: !Ref ExternalID
+          REGION: !Ref CloudOneRegion
+          Quarantine: !Ref QuarantineBucket
+      Role: !GetAtt CustomLambdaRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import boto3
+          import cfnresponse
+
+          scanner_role_arn = os.environ['ScanRoleArn']
+          # IAM policy to be attached to the existing role
+          attach_policy = {
+              "Version": "2012-10-17",
+              "Statement": [
+                  {
+                      "Sid": "VisualEditor0",
+                      "Effect": "Allow",
+                      "Action": [
+                          "sqs:ReceiveMessage",
+                          "sqs:DeleteMessage",
+                          "sqs:GetQueueAttributes",
+                          "sqs:GetQueueUrl",
+                          "sqs:ListQueueTags",
+                          "sqs:ListDeadLetterSourceQueues",
+                          "sqs:ListMessageMoveTasks",
+                          "sqs:ListQueues"
+                      ],
+                      "Resource": "*"
+                  }
+              ]
+          }
+          
+          def handler(event, context):
+              try:
+                  # Attach the additional policy to the existing IAM role
+                  iam_client = boto3.client('iam')
+                  response = iam_client.put_role_policy(
+                      RoleName=scanner_role_arn.split('/')[-1],
+                      PolicyName='FullScanFSSPolicy',
+                      PolicyDocument=json.dumps(attach_policy)
+                  )
+
+                  if event['RequestType'] == 'Create' or event['RequestType'] == 'Update':
+                      # Update the CloudFormation stack parameters using the existing template
+                      cf_client = boto3.client('cloudformation')
+                      stack_name = os.environ['SCANNERSTACKARN']
+                      template_body = cf_client.get_template(StackName=stack_name)['TemplateBody']
+                      response = cf_client.update_stack(
+                          StackName=stack_name,
+                          TemplateURL="https://file-storage-security.s3.amazonaws.com/latest/templates/FSS-Account-Scanner-Stack.template",
+                          Parameters=[
+                              {
+                                  'ParameterKey': 'KMSKeyARNsForBucketSSE',
+                                  'ParameterValue': os.environ['KMSKEYS']
+                              },
+                              {
+                                  'ParameterKey': 'ExternalID',
+                                  'ParameterValue': os.environ['EXTERNALID']
+                              },
+                              {
+                                  'ParameterKey': 'CloudOneRegion',
+                                  'ParameterValue': os.environ['REGION']
+                              },
+                              {
+                                  'ParameterKey': 'QuarantineBucket',
+                                  'ParameterValue': os.environ['Quarantine']
+                              }
+                          ],
+                          Capabilities=['CAPABILITY_IAM']
+                      )
+                      # Wait for the stack update to complete
+                      cf_client.get_waiter('stack_update_complete').wait(StackName=stack_name)
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, "CustomResource completed update successfully")
+                  elif event['RequestType'] == 'Delete':
+                      # Create an IAM client
+                      iam_client = boto3.client('iam')
+                      
+                      # Detach the additional policy from the existing IAM role during stack deletion
+                      response = iam_client.delete_role_policy(
+                          RoleName=scanner_role_arn.split('/')[-1],
+                          PolicyName='FullScanFSSPolicy'
+                      )
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as e:
+                  print(f"CustomResource Lambda Error: {e}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {}, "CustomResource stack update failed")
+
+Outputs:
+  EncryptedBucketKeys:
+    Description: "KMS keys used for bucket encryption"
+    Value: !Join [",", !GetAtt KMSCollection.EncryptedBuckets]
+  SNSTopicARN:
+    Description: "Scanner SNS Topic ARN"
+    Value: !GetAtt AddtoCloudOne.SNSTopicARN
+  ScannerRole:
+    Description: "Scanner Role ARN"
+    Value: !GetAtt AddtoCloudOne.ScanRoleARN
+  ScannerLambda:
+    Description: "Scanner Lambda ARN"
+    Value: !GetAtt AddtoCloudOne.ScannerARN

@@ -1,0 +1,127 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "Trend Cloud One FSS Account Wide deployment Stack."
+Parameters:
+  AdminRoleARN:
+    Type: String
+    Description: ARN of the AWSStackSet Administrator Role
+    Default: ""
+  RegionsToEnable:
+    Description: Specify all AWS Regions to deploy EventBridge Rule in to route to Scanner Region.[Comma Delimited List - No Spaces between].
+    Type: CommaDelimitedList
+    Default: 'us-east-2'
+  CloudOneRegion:
+    Description: The region of the Trend Micro Cloud One services.
+    Type: String
+    Default: us-1
+  ExternalID:
+    Description: "The Cloud One Account External ID."
+    Type: String
+    Default: ""
+  APIKey:
+    Description: Cloud One API Key. 
+    Type: String
+    NoEcho: true
+    Default: ''
+Resources:
+  QuarantineBucket:
+    Type: AWS::S3::Bucket
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Sub "quarantine-${AWS::AccountId}"
+  EventBridgeIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: FSS-EventBridge-Role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: "events.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: MyPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: "events:PutEvents"
+                Resource: !Join [":", ["arn", "aws", "events", !Ref "AWS::Region", !Ref "AWS::AccountId", "event-bus/default"]]
+  
+  EventPatternStackSet:
+    Type: AWS::CloudFormation::StackSet
+    Properties: 
+      Description: FSS Stackset for Regional EventBridge Patterns
+      AdministrationRoleARN: !Ref AdminRoleARN
+      Parameters:
+        - 
+          ParameterKey: SourceRegionEventBusARN
+          ParameterValue: !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/default"
+        - 
+          ParameterKey: EventBridgeIAMRole
+          ParameterValue: !GetAtt EventBridgeIAMRole.Arn
+      PermissionModel: SELF_MANAGED
+      ManagedExecution:
+        Active: true
+      StackInstancesGroup:
+        - Regions: !Ref RegionsToEnable
+          DeploymentTargets:
+            Accounts: 
+              - !Ref AWS::AccountId
+      OperationPreferences:
+        FailureTolerancePercentage: 0
+        MaxConcurrentPercentage: 100
+        RegionConcurrencyType: PARALLEL
+      StackSetName: C1-FSS-StackSet
+      TemplateBody: |
+        Parameters:
+          SourceRegionEventBusARN:
+            Type: String
+            Description: ARN of the Event bus in a different account or region
+          EventBridgeIAMRole:
+            Type: String
+            Description: ARN of the IAM EventBridge Service Bus Role
+        Resources:
+          FSSEventBridgeRule:
+            Type: 'AWS::Events::Rule'
+            Properties:
+              Name: FSSEventBridgeRule
+              EventPattern:
+                source:
+                  - 'aws.s3'
+                detail-type:
+                  - 'Object Created'
+              Targets:
+                - Arn: !Ref SourceRegionEventBusARN
+                  Id: FSSEventBusTarget
+                  RoleArn: !Ref EventBridgeIAMRole
+  
+  TrendScannerStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        CloudOneRegion: !Ref CloudOneRegion
+        ExternalID: !Ref ExternalID
+        QuarantineBucket: !Ref QuarantineBucket
+      TemplateURL: "https://file-storage-security.s3.amazonaws.com/latest/templates/FSS-Account-Scanner-Stack.template"
+  
+  ConfigureScanner:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        CloudOneRegion: !Ref CloudOneRegion
+        ExternalID: !Ref ExternalID
+        QuarantineBucket: !Ref QuarantineBucket
+        APIKey: !Ref APIKey
+        ScannerStackName: !Ref TrendScannerStack
+      TemplateURL: "https://immersionday-workshops-trendmicro.s3.amazonaws.com/fss/vle-deployment/account-wide/custom.template.yaml"
+
+  FullSchedule:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters: 
+        ScanResultTopicArn: !GetAtt ConfigureScanner.Outputs.SNSTopicARN
+        ScannerLambdaArn: !GetAtt ConfigureScanner.Outputs.ScannerLambda
+      TemplateURL: "https://immersionday-workshops-trendmicro.s3.amazonaws.com/fss/vle-deployment/account-wide/main.fullschedule.yaml"
+
