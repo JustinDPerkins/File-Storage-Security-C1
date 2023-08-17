@@ -46,7 +46,7 @@ You will need:
 
 [Full Scan Parameters]
 - **IncludedBuckets**: Comma separated list of buckets to be included in the scan. If empty, all buckets will be scanned and make sure to exclude any quarantine buckets from the scan to avoid infinite loops. If not empty, 'ExcludeBuckets' will be ignored.
-- **ExcludedBuckets**: Comma separated list of buckets to be excluded from the scan. If empty, no buckets will be excluded from the scan.
+- **ExcludedBuckets**: Comma separated list of buckets to be excluded from the scan. If empty, no buckets will be excluded from the scan. [Exclude Cloudtrail bucket!!!]
 - **Schedule**: Set a schedule for full scan. If empty, there will not be a scheduled scan. Defaults to empty. More info at: https://docs.aws.amazon.com/lambda/latest/dg/services-cloudwatchevents-expressions.html
 
 [![Launch Stack](https://cdn.rawgit.com/buildkite/cloudformation-launch-stack-button-svg/master/launch-stack.svg)](https://console.aws.amazon.com/cloudformation/home#/stacks/new?stackName=VLE-FSS-Stack&templateURL=https://immersionday-workshops-trendmicro.s3.amazonaws.com/fss/vle-deployment/account-wide/main.account.yaml)
