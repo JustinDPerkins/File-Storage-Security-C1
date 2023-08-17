@@ -1,9 +1,49 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: "Trend Cloud One FSS Account Wide deployment Stack."
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "File Storage Security Account-Level Parameters"
+        Parameters:
+          - RegionsToEnable
+          - CloudOneRegion
+          - ExternalID
+          - APIKey
+      - Label:
+          default: "AWS Adminstration Parameters"
+        Parameters:
+          - AdminRoleARN
+      - Label:
+          default: "Full Account Scan Parameters"
+        Parameters:
+          - IncludedBuckets
+          - ExcludedBuckets
+          - Schedule
+    
+    ParameterLabels:
+      IncludedBuckets:
+        default: "Buckets to Scan: Leave blank for all Buckets. Otherwise provide comma seperated list of buckets to include."
+      Schedule:
+        default: "CRON: Set a schedule for full scan."
+      ExcludedBuckets:
+        default: "Buckets to Exclude: Leave blank for no exclusions of buckets. Otherwise provide comma seperated list of buckets to exclude."
+      AdminRoleARN:
+        default: "AdminRoleARN: ARN of the AWSStackSet Administrator Role"
+      CloudOneRegion:
+        default: "Trend Micro Cloud One region"
+      APIKey:
+        default: "Trend Micro Cloud One API Key"
+      ExternalID:
+        default: "ExternalID"
+      RegionsToEnable:
+        Description: "Additonal Regions: Comma seperated list of additional AWS regions to monitor events."
+
 Parameters:
   AdminRoleARN:
     Type: String
-    Description: ARN of the AWSStackSet Administrator Role
+    Description: "ARN of the AWSStackSet Administrator Role. More info: https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-prereqs-self-managed.html#stacksets-prereqs-accountsetup"
     Default: ""
   RegionsToEnable:
     Description: Specify all AWS Regions to deploy EventBridge Rule in to route to Scanner Region.[Comma Delimited List - No Spaces between].
@@ -21,7 +61,18 @@ Parameters:
     Description: Cloud One API Key. 
     Type: String
     NoEcho: true
-    Default: ''
+    Default: ""
+  IncludedBuckets:
+    Type: CommaDelimitedList
+    Description: Comma separated list of buckets to be included in the scan. If empty, all buckets will be scanned and make sure to exclude any quarantine buckets from the scan to avoid infinite loops. If not empty, 'ExcludeBuckets' will be ignored.
+  ExcludedBuckets:
+    Type: CommaDelimitedList
+    Description: Comma separated list of buckets to be excluded from the scan. If empty, no buckets will be excluded from the scan.
+  Schedule:
+    Type: String
+    Default: ""
+    Description: "Set a schedule for full scan. If empty, there will not be a scheduled scan. Defaults to empty. More info at: https://docs.aws.amazon.com/lambda/latest/dg/services-cloudwatchevents-expressions.html"
+
 Resources:
   QuarantineBucket:
     Type: AWS::S3::Bucket
@@ -32,7 +83,7 @@ Resources:
   EventBridgeIAMRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: FSS-EventBridge-Role
+      RoleName: !Join ["-", ["FSS", "EventBridge", "Role", !Ref "AWS::StackName"]]
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -41,7 +92,7 @@ Resources:
               Service: "events.amazonaws.com"
             Action: "sts:AssumeRole"
       Policies:
-        - PolicyName: MyPolicy
+        - PolicyName: !Join ["-", ["FSS", "EventBridgeRole", "Policy", !Ref "AWS::StackName"]]
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -115,6 +166,7 @@ Resources:
         QuarantineBucket: !Ref QuarantineBucket
         APIKey: !Ref APIKey
         ScannerStackName: !Ref TrendScannerStack
+        ExcludedBuckets: !Join [",", !Ref ExcludedBuckets]
       TemplateURL: "https://immersionday-workshops-trendmicro.s3.amazonaws.com/fss/vle-deployment/account-wide/custom.template.yaml"
 
   FullSchedule:
@@ -123,5 +175,7 @@ Resources:
       Parameters: 
         ScanResultTopicArn: !GetAtt ConfigureScanner.Outputs.SNSTopicARN
         ScannerLambdaArn: !GetAtt ConfigureScanner.Outputs.ScannerLambda
-      TemplateURL: "https://immersionday-workshops-trendmicro.s3.amazonaws.com/fss/vle-deployment/account-wide/main.fullschedule.yaml"
-
+        IncludedBuckets: !Join [",", !Ref IncludedBuckets]
+        ExcludedBuckets: !Join [",", !Ref ExcludedBuckets]
+        Schedule: !Ref Schedule
+      TemplateURL: "https://immersionday-workshops-trendmicro.s3.amazonaws.com/fss/vle-deployment/account-wide/fullscan.template.yaml"
