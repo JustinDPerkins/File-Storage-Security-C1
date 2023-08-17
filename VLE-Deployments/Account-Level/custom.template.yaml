@@ -20,6 +20,9 @@ Parameters:
   ScannerStackName:
     Description: "Stack Name for Trend FSS Scanner Stack"
     Type: String
+  ExcludedBuckets:
+    Type: CommaDelimitedList
+    Description: Comma separated list of buckets to be excluded from the scan. If empty, no buckets will be excluded from the scan.
 Resources:
   CloudOneApiKeySecret:
     Type: AWS::SecretsManager::Secret
@@ -90,11 +93,12 @@ Resources:
       FunctionName: KMSCollectionLambda
       Handler: index.handler
       Runtime: python3.8
-      Timeout: 900
+      Timeout: 600
       Role: !GetAtt CustomLambdaRole.Arn
       Environment:
         Variables:
           EXCLUDE: !Ref QuarantineBucket
+          EXCLUSION_LIST: !Join [",", !Ref ExcludedBuckets]
       Code:
         ZipFile: |
           import boto3
@@ -107,6 +111,10 @@ Resources:
               eventbridge_client = boto3.client('events')
               kms_key_arns = []
 
+              EXCLUSION_LIST_STRING = os.environ['EXCLUSION_LIST']
+              # Convert the comma-separated string to a list
+              EXCLUSION_LIST = [bucket.strip() for bucket in EXCLUSION_LIST_STRING.split(',')]
+              
               try:
                   # List all S3 buckets
                   response = s3_client.list_buckets()
@@ -117,6 +125,10 @@ Resources:
               # Check for KMS encryption and collect KMS Key ARNs
               for bucket in response['Buckets']:
                   bucket_name = bucket['Name']
+
+                  if bucket_name in EXCLUSION_LIST:
+                      # Skip this bucket as it's in the exclusion list
+                      continue
 
                   try:
                       bucket_encryption = s3_client.get_bucket_encryption(Bucket=bucket_name)
@@ -187,7 +199,7 @@ Resources:
                           return resource['PhysicalResourceId']
                   return None
               except Exception as e:
-                  print(f"Error getting Physical ID for {logical_id}: {str(e)}")
+                  print(f"Error getting CFT Stack Physical ID for {logical_id}: {str(e)}")
                   return None 
 
           def lambda_handler(event, context):
@@ -371,32 +383,36 @@ Resources:
                       cf_client = boto3.client('cloudformation')
                       stack_name = os.environ['SCANNERSTACKARN']
                       template_body = cf_client.get_template(StackName=stack_name)['TemplateBody']
-                      response = cf_client.update_stack(
-                          StackName=stack_name,
-                          TemplateURL="https://file-storage-security.s3.amazonaws.com/latest/templates/FSS-Account-Scanner-Stack.template",
-                          Parameters=[
-                              {
-                                  'ParameterKey': 'KMSKeyARNsForBucketSSE',
-                                  'ParameterValue': os.environ['KMSKEYS']
-                              },
-                              {
-                                  'ParameterKey': 'ExternalID',
-                                  'ParameterValue': os.environ['EXTERNALID']
-                              },
-                              {
-                                  'ParameterKey': 'CloudOneRegion',
-                                  'ParameterValue': os.environ['REGION']
-                              },
-                              {
-                                  'ParameterKey': 'QuarantineBucket',
-                                  'ParameterValue': os.environ['Quarantine']
-                              }
-                          ],
-                          Capabilities=['CAPABILITY_IAM']
-                      )
-                      # Wait for the stack update to complete
-                      cf_client.get_waiter('stack_update_complete').wait(StackName=stack_name)
-                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, "CustomResource completed update successfully")
+                      try:
+                          response = cf_client.update_stack(
+                              StackName=stack_name,
+                              TemplateURL="https://file-storage-security.s3.amazonaws.com/latest/templates/FSS-Account-Scanner-Stack.template",
+                              Parameters=[
+                                  {
+                                      'ParameterKey': 'KMSKeyARNsForBucketSSE',
+                                      'ParameterValue': os.environ['KMSKEYS']
+                                  },
+                                  {
+                                      'ParameterKey': 'ExternalID',
+                                      'ParameterValue': os.environ['EXTERNALID']
+                                  },
+                                  {
+                                      'ParameterKey': 'CloudOneRegion',
+                                      'ParameterValue': os.environ['REGION']
+                                  },
+                                  {
+                                      'ParameterKey': 'QuarantineBucket',
+                                      'ParameterValue': os.environ['Quarantine']
+                                  }
+                              ],
+                              Capabilities=['CAPABILITY_IAM']
+                          )
+                          # Wait for the stack update to complete
+                          cf_client.get_waiter('stack_update_complete').wait(StackName=stack_name)
+                          cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, "CustomResource completed update successfully")
+                      except Exception as e:
+                        print("Template not updated due to nothing to update.")
+                        cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, "No New Parameters to Update Stack")
                   elif event['RequestType'] == 'Delete':
                       # Create an IAM client
                       iam_client = boto3.client('iam')
